@@ -2,8 +2,7 @@
 
 ## Proyecto Grupal 01
 
-### Modelado de *Interconnect* para el Análisis de Desempeño de
-Protocolos de Coherencia HW/SW
+### Modelado de *Interconnect* para el Análisis de Desempeño de Protocolos de Coherencia HW/SW
 
 ## Arquitectura de Computadores II (CE4302)
 
