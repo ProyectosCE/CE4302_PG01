@@ -148,7 +148,7 @@ Esta interacción es clave para asegurar que los workloads ejerciten correctamen
 
 ### 8. Lenguaje de implementación
 
-* Lenguaje seleccionado: ______________________
+* Lenguaje seleccionado: SystemVerilog
 
 ---
 
