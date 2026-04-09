@@ -1,16 +1,18 @@
 # Demostración 1
 
-## Sistema embebido tipo IoT / RT
+## Sistema embebido multicore con datos compartidos en memoria cacheable
 
 ## Definición de enfoque y workloads
 
+---
+
 ### 1. Introducción
 
-En este proyecto se propone el modelado de un sistema multiprocesador con memoria compartida, con el objetivo de analizar el impacto de los protocolos de coherencia de caché sobre el rendimiento del sistema.
+En este proyecto se propone el modelado de un sistema multiprocesador con memoria compartida, con el objetivo de analizar el impacto de los protocolos de coherencia de caché sobre el desempeño del interconnect.
 
-El enfoque seleccionado corresponde a un sistema embebido tipo IoT / tiempo real, en el cual múltiples tareas concurrentes acceden a datos compartidos. Este tipo de sistemas es común en aplicaciones modernas como sensores inteligentes, procesamiento distribuido y comunicación en dispositivos embebidos [1], [2].
+El enfoque seleccionado corresponde a un sistema embebido multicore con múltiples tareas concurrentes que acceden a estructuras de datos compartidas en memoria. A diferencia de sistemas embebidos tradicionales donde pueden utilizarse mecanismos como DMA o memoria no cacheable, en este modelo se estudia específicamente el comportamiento de datos compartidos en regiones de memoria cacheable, ya que estos son los que generan tráfico de coherencia y permiten analizar el impacto de protocolos write-invalidate y write-update [1], [2].
 
-A diferencia de arquitecturas de propósito general, los sistemas embebidos se caracterizan por recursos limitados, simplicidad en el hardware y requerimientos de tiempo de respuesta predecibles. Por esta razón, el modelo propuesto busca reflejar estas condiciones mediante decisiones de diseño específicas en la jerarquía de memoria y el interconnect.
+De esta forma, el proyecto no modela periféricos ni sensores físicos directamente, sino el procesamiento de datos ya presentes en memoria compartida, lo cual es un escenario común en sistemas embebidos modernos donde múltiples tareas interactúan sobre estructuras de datos comunes.
 
 ---
 
@@ -18,7 +20,7 @@ A diferencia de arquitecturas de propósito general, los sistemas embebidos se c
 
 El sistema a modelar consiste en:
 
-* 4 elementos de procesamiento (PEs) que representan tareas independientes
+* 4 elementos de procesamiento (PEs) que representan tareas concurrentes
 * Caché L1 privada por cada PE
 * Interconnect basado en bus compartido
 * Memoria principal compartida
@@ -38,61 +40,64 @@ Memoria:
 
 * Latencia moderada (mayor que acceso a caché)
 
-Este diseño busca representar un sistema embebido multicore simplificado, donde cada PE modela una tarea de un sistema operativo en tiempo real.
+Este diseño busca representar un sistema embebido multicore simplificado, enfocado en el análisis del tráfico generado por acceso a memoria compartida cacheable.
 
 ---
 
 ### 3. Justificación del diseño
 
-El uso de 4 PEs permite generar escenarios de contención, compartición de datos y comportamiento concurrente, manteniendo la complejidad del sistema en un nivel manejable.
+El uso de 4 PEs permite generar escenarios de contención y compartición de datos, suficientes para observar efectos de coherencia sin aumentar excesivamente la complejidad del sistema.
 
-La caché de tamaño reducido (2 KB) se selecciona para reflejar las limitaciones de memoria típicas en sistemas embebidos, además de inducir fallos de caché que permitan observar el impacto de los protocolos de coherencia.
+La selección de una caché de 2 KB responde a dos objetivos: reflejar restricciones típicas de sistemas embebidos y forzar fallos de caché que generen tráfico hacia el interconnect.
 
-La organización direct-mapped reduce la complejidad de implementación y modela estructuras de hardware simples, comunes en microcontroladores, a costa de introducir conflictos de mapeo.
+La organización direct-mapped reduce la complejidad de implementación y, al mismo tiempo, introduce conflictos de mapeo que incrementan la actividad del sistema, lo cual es útil para el análisis.
 
-La política write-back con write-allocate permite reducir el tráfico hacia memoria principal, lo cual es relevante en sistemas donde el consumo energético y el ancho de banda son limitados.
+La política write-back con write-allocate permite modelar sistemas modernos donde se busca reducir el tráfico hacia memoria principal, haciendo más relevante el comportamiento del protocolo de coherencia.
 
-El uso de un bus compartido como interconnect responde a su simplicidad y a su uso extendido en arquitecturas embebidas, donde se prioriza bajo costo y facilidad de implementación.
+El uso de un bus compartido permite observar claramente la contención entre PEs, lo cual es fundamental para evaluar el impacto de los protocolos sobre el tráfico y la latencia.
 
-El arbitraje round-robin asegura acceso equitativo al bus entre los PEs, evitando condiciones de inanición.
+El arbitraje round-robin asegura acceso equitativo al bus, evitando inanición y permitiendo comparar el comportamiento bajo condiciones controladas.
 
-La inclusión de latencia en memoria permite modelar diferencias reales entre accesos a caché y memoria principal, lo cual es fundamental para el análisis de desempeño.
+La inclusión de latencia en memoria permite distinguir claramente entre accesos a caché y accesos a memoria, haciendo visible el costo de los fallos de caché.
 
 ---
 
 ### 4. Definición de workloads
 
-Se proponen tres escenarios basados en patrones comunes en sistemas embebidos:
+Los workloads fueron diseñados específicamente para generar suficiente tráfico en el interconnect y activar eventos de coherencia de manera frecuente, permitiendo comparar protocolos write-invalidate y write-update.
 
-#### 4.1 Sensor compartido
+#### 4.1 Variable compartida con alta contención
 
-Un PE produce datos (sensor) y los demás los consumen:
+Todos los PEs acceden a una misma variable en memoria cacheable:
 
-* PE0: escritura periódica de datos
-* PE1–PE3: lecturas frecuentes del mismo dato
+* Lecturas y escrituras frecuentes en todos los PEs
 
-Este patrón modela el acceso a sensores compartidos en sistemas IoT, donde múltiples tareas requieren la misma información.
-
----
-
-#### 4.2 Control distribuido
-
-Todos los PEs acceden y modifican una variable compartida:
-
-* Lectura del estado global
-* Escritura del estado actualizado
-
-Este comportamiento es representativo de sistemas de control donde múltiples módulos cooperan sobre un estado común, generando alta actividad de coherencia.
+Este patrón genera alta contención y múltiples eventos de invalidación o actualización, permitiendo observar el comportamiento de los protocolos bajo carga intensa.
 
 ---
 
-#### 4.3 Buffer circular (productor-consumidor)
+#### 4.2 Productor-consumidor multicore
 
-* PE0: produce datos en un buffer
-* PE1: consume datos
-* PE2–PE3: monitorean el buffer
+* Dos PEs producen datos en un buffer compartido
+* Dos PEs consumen datos del mismo buffer
 
-Este patrón es común en comunicación de datos, procesamiento en pipeline y streaming.
+Todos los accesos se realizan sobre memoria cacheable compartida.
+
+Este workload genera tráfico constante de lectura y escritura, simulando comunicación entre tareas y permitiendo analizar la interacción entre coherencia y flujo de datos.
+
+---
+
+#### 4.3 Migración de ownership
+
+Una misma dirección de memoria es escrita de forma alternada por distintos PEs:
+
+* PE0, PE1, PE2 y PE3 escriben sobre la misma variable en secuencia
+
+Este patrón genera cambios constantes en los estados de coherencia, provocando transferencias de ownership y alto tráfico en el bus.
+
+---
+
+Estos workloads permiten cubrir distintos tipos de comportamiento: alta contención, comunicación entre tareas y migración de datos, todos relevantes para el análisis del interconnect.
 
 ---
 
@@ -100,23 +105,50 @@ Este patrón es común en comunicación de datos, procesamiento en pipeline y st
 
 La validación del sistema se realizará mediante:
 
-* Generación de logs de ejecución que registren accesos a memoria y eventos relevantes
+* Generación de logs de ejecución que registren accesos a memoria y eventos del protocolo
 * Verificación de consistencia de datos entre PEs
-* Análisis de secuencias de eventos para validar el comportamiento del protocolo de coherencia
+* Análisis de secuencias de eventos de coherencia
 
-El objetivo principal es asegurar que los datos leídos por cada PE correspondan al valor más reciente escrito, lo cual es la base del problema de coherencia.
+Se busca asegurar que los valores leídos correspondan a los valores más recientes escritos, garantizando el correcto funcionamiento del protocolo.
 
 ---
 
 ### 6. Métricas a evaluar
 
-Se consideran las siguientes métricas para el análisis del sistema:
+Se consideran las siguientes métricas:
 
-* Tráfico en el bus: número de transacciones generadas
-* Latencia percibida: tiempo promedio de acceso a memoria
-* Frecuencia de eventos de coherencia: número de invalidaciones, actualizaciones u otros eventos relevantes
+* Tráfico en el bus (número de transacciones)
+* Latencia promedio de acceso a memoria
+* Frecuencia de eventos de coherencia
+* Utilización del bus
 
-Estas métricas permiten evaluar la eficiencia del sistema y comparar el impacto de diferentes protocolos de coherencia.
+Estas métricas permiten analizar el impacto de los protocolos sobre el desempeño del sistema.
+
+---
+
+### 7. Interacción entre software y hardware
+
+Dado que el sistema se divide en generación de workloads (software) y modelado de interconnect/caché (hardware), es necesario definir claramente las expectativas entre ambos.
+
+Software hacia hardware:
+
+* Generar memory traces con patrones de acceso definidos
+* Especificar direcciones, tipo de acceso (read/write) y orden de ejecución
+* Garantizar que los workloads generen suficiente tráfico y contención
+
+Hardware hacia software:
+
+* Definir formato esperado de los traces
+* Proveer retroalimentación sobre comportamiento observado (latencias, conflictos, eventos)
+* Exponer métricas que permitan evaluar el desempeño de los workloads
+
+Esta interacción es clave para asegurar que los workloads ejerciten correctamente el sistema y que los resultados sean interpretables.
+
+---
+
+### 8. Lenguaje de implementación
+
+* Lenguaje seleccionado: ______________________
 
 ---
 
