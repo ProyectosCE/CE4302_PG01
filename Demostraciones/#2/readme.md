@@ -202,7 +202,7 @@ A diferencia de MSI, Firefly busca minimizar fallos de caché posteriores, espec
 
 Cuando un bloque está en estado Shared y ocurre una escritura:
 
-* Se emite un **BusUpd**
+* Se emite un BusUpd
 * Todas las cachés con copia válida actualizan su contenido
 * El bloque permanece en estado Shared
 
