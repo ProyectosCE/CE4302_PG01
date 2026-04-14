@@ -432,6 +432,111 @@ Esta interacción define claramente el flujo de información dentro del sistema 
 
 ---
 
+### 11. Interacción esperada entre software y hardware
+
+Dado que el sistema se construye a partir de dos dominios claramente diferenciados (generación de workloads (software) y modelado del interconnect/coherencia (hardware)) es necesario definir explícitamente qué se espera de cada uno.
+
+Esta definición actúa como un contrato de interacción, evitando ambigüedades durante la implementación y asegurando que ambos componentes trabajen de forma coherente.
+
+---
+
+#### 11.1 Qué espera el hardware del software
+
+El modelo de hardware (caché, bus y memoria) asume que el software provee estímulos bien definidos y consistentes.
+
+En particular, se espera que el software:
+
+* Genere memory traces válidos, compuestos por:
+  * Direcciones de 32 bits
+  * Tipo de acceso (lectura o escritura)
+  * Orden de ejecución bien definido
+
+* Mantenga consistencia temporal, es decir:
+  * Las operaciones deben emitirse en un orden claro por cada core
+  * No se deben introducir eventos ambiguos o simultáneos sin control
+
+* Produzca patrones de acceso representativos, alineados con los workloads definidos:
+  * Accesos repetidos a las mismas direcciones (para generar coherencia)
+  * Contención entre cores
+  * Alternancia entre lecturas y escrituras
+
+* Genere suficiente intensidad de tráfico, de manera que:
+  * Se activen eventos de coherencia (BusRd, BusRdX, BusUpd)
+  * Se puedan observar diferencias entre MSI y Firefly
+
+---
+
+##### Justificación
+
+El hardware modelado no tiene “inteligencia propia” para generar comportamiento interesante; depende completamente de los accesos generados por el software.
+
+Si los workloads no generan compartición, escrituras, o contención, entonces los protocolos de coherencia no se activan de forma significativa, y el análisis pierde valor.
+
+En otras palabras:
+
+*el software define el escenario de experimentación*
+
+---
+
+#### 11.2 Qué espera el software del hardware
+
+El software asume que el hardware responde de forma consistente, determinística y medible.
+
+En particular, se espera que el hardware:
+
+* Implemente correctamente los protocolos de coherencia:
+  * Transiciones de estado coherentes con las FSM definidas
+  * Reacción adecuada a eventos de bus (snooping)
+
+* Respete el modelo temporal definido:
+  * Hits rápidos (1 ciclo)
+  * Misses con penalización consistente (~24 ciclos)
+  * Costos de bus claramente diferenciados
+
+* Genere y exponga métricas confiables:
+  * Hits / misses
+  * Transacciones del bus
+  * Latencia por acceso
+  * Eventos de coherencia (invalidaciones / updates)
+
+* Mantenga consistencia de datos:
+  * Un read siempre debe retornar el valor más reciente escrito
+  * No deben existir incoherencias entre caches
+
+---
+
+##### Justificación
+
+El objetivo del software es analizar el comportamiento del sistema.
+
+Para que esto sea posible:
+
+- El hardware debe ser predecible
+- Las métricas deben ser correctas
+- El modelo debe ser reproducible
+
+Si el hardware no cumple estas condiciones, los resultados obtenidos no reflejan el comportamiento real de los protocolos, sino errores de implementación.
+
+En otras palabras:
+
+*el hardware define la validez de los resultados*
+
+---
+
+#### 11.3 Relación entre ambos
+
+La interacción software–hardware en este proyecto puede resumirse así:
+
+* El software genera estímulos
+* El hardware reacciona según reglas formales
+* El monitor captura el comportamiento resultante
+
+Esto crea un flujo claro:
+
+```text
+Workload (SW) -> Accesos -> Cache/Bus (HW) -> Eventos -> Métricas
+```
+
 ### Referencias
 
 [1] J. L. Hennessy and D. A. Patterson, *Computer Architecture: A Quantitative Approach*, 6th ed. Elsevier, 2017.

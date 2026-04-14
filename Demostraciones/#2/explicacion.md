@@ -812,3 +812,322 @@ Luego:
 - Cada una decide si cambia estado
 
 ---
+
+## 20. Concurrencia en SystemVerilog: uso de threads (fork-join)
+
+### ¿A qué se refiere con threads?
+
+En SystemVerilog, los *threads* son procesos que se ejecutan en paralelo dentro de la simulación.
+
+Esto se logra con la construcción:
+
+```systemverilog
+fork
+    // proceso 1
+    // proceso 2
+join
+```
+
+Esto permite modelar múltiples componentes funcionando al mismo tiempo.
+
+---
+
+### ¿Por qué es importante en este proyecto?
+
+El sistema que se está modelando es inherentemente concurrente:
+
+- 4 cores ejecutando instrucciones al mismo tiempo
+- Cachés reaccionando a eventos del bus
+- Bus arbitrando solicitudes
+- Memoria atendiendo requests
+
+Si todo se implementa de forma secuencial, el comportamiento no representa un sistema real.
+
+Por eso es necesario usar threads: para modelar paralelismo realista.
+
+---
+
+### Tipos de fork-join
+
+#### fork ... join
+
+- Espera a que todos los procesos terminen
+
+```systemverilog
+fork
+    task1();
+    task2();
+join
+```
+
+---
+
+#### fork ... join_any
+
+- Continúa cuando uno termina
+
+```systemverilog
+fork
+    task1();
+    task2();
+join_any
+```
+
+---
+
+#### fork ... join_none
+
+- No espera, todos corren en background
+
+```systemverilog
+fork
+    task1();
+    task2();
+join_none
+```
+
+Este es el más útil para simulaciones tipo hardware
+
+---
+
+### ¿Cómo se aplica en el proyecto?
+
+Cada componente puede ejecutarse como un thread independiente:
+
+#### Core
+
+```text
+loop:
+    generar acceso (PrRd / PrWr)
+    enviarlo al bus
+```
+
+#### Bus
+
+```text
+loop:
+    recibir requests
+    arbitrar
+    broadcast
+```
+
+#### Cache
+
+```text
+loop:
+    escuchar bus (snooping)
+    reaccionar a eventos
+```
+
+#### Memory
+
+```text
+loop:
+    atender requests
+```
+
+Todos estos loops deben correr en paralelo usando fork-join
+
+---
+
+### Analogía
+
+Es como una oficina:
+
+- Cada persona trabaja al mismo tiempo
+- No esperan a que uno termine para actuar
+
+Si todo fuera secuencial:
+
+- primero trabaja Core0
+- luego Core1
+- luego el bus
+
+eso no representa un sistema real
+
+---
+
+## 21. IPC en SystemVerilog: Mailboxes
+
+### ¿Qué es IPC (Interprocess Communication)?
+
+IPC significa:
+
+👉 comunicación entre procesos (threads)
+
+En este proyecto:
+
+- Core, Cache, Bus y Memory son procesos independientes
+- Necesitan comunicarse entre sí
+
+---
+
+### ¿Qué es una mailbox?
+
+Una mailbox es un canal de comunicación entre threads.
+
+Permite:
+
+- Enviar mensajes
+- Recibir mensajes
+- Sincronizar procesos
+
+---
+
+### Operaciones básicas
+
+#### Enviar (put)
+
+```systemverilog
+mailbox.put(msg);
+```
+
+#### Recibir (get)
+
+```systemverilog
+mailbox.get(msg);
+```
+
+---
+
+### Propiedades importantes
+
+- FIFO (primero en entrar, primero en salir)
+- Bloqueante:
+
+  - get() espera si no hay datos
+  - put() puede esperar si está llena
+
+Esto ayuda a sincronizar automáticamente
+
+---
+
+### ¿Cómo se aplica en el proyecto?
+
+#### Core -> Bus
+
+El core envía requests:
+
+```text
+PrRd(addr)
+PrWr(addr)
+```
+
+usando mailbox
+
+---
+
+#### Bus -> Caches
+
+El bus hace broadcast:
+
+```text
+BusRd
+BusRdX
+BusUpd
+```
+
+todas las caches reciben el mensaje
+
+---
+
+#### Bus -> Memory
+
+El bus solicita datos:
+
+```text
+read(addr)
+write(addr)
+```
+
+---
+
+### Flujo completo
+
+```text
+Core -> (mailbox) -> Bus -> (broadcast) -> Caches
+                            -> Memory
+```
+
+---
+
+### ¿Por qué usar mailboxes?
+
+Sin mailboxes:
+
+- Se tendría que manejar señales manualmente
+- Riesgo alto de errores de sincronización
+
+Con mailboxes:
+
+- Comunicación limpia
+- Sincronización automática
+- Código más modular
+
+---
+
+### Analogía
+
+Mailbox = buzón de mensajes
+
+- Core deja una carta
+- Bus la recoge cuando puede
+- No necesitan coordinarse directamente
+
+---
+
+### Relación con el proyecto
+
+Esto permite:
+
+- Desacoplar componentes
+- Modelar latencias naturalmente
+- Simular comportamiento asincrónico
+
+---
+
+## 22. Integración: threads + mailboxes
+
+### Idea clave
+
+El modelo completo funciona así:
+
+- Cada componente corre en su propio thread
+- Se comunican mediante mailboxes
+
+---
+
+### Ejemplo conceptual
+
+```text
+Thread Core:
+    genera requests -> mailbox_core_bus
+
+Thread Bus:
+    recibe -> arbitra -> broadcast -> mailbox_bus_cache
+
+Thread Cache:
+    recibe broadcast -> actualiza estado
+
+Thread Memory:
+    responde requests
+```
+
+---
+
+### Beneficio principal
+
+Se logra un modelo:
+
+- Concurrente
+- Modular
+- Cercano a hardware real
+
+---
+
+### Interpretación final
+
+- fork-join -> define *quién corre en paralelo*
+- mailboxes -> definen *cómo se comunican*
+
+---
