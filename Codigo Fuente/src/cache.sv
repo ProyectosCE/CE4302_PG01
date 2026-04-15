@@ -5,6 +5,10 @@ class Cache;
     int cache_id;
     localparam NUM_LINES = 64;
 
+    // PROTOCOLO
+    typedef enum {MSI, FIREFLY} protocol_e;
+    protocol_e protocol;
+
     // Mailboxes
     CoreReq_mbx from_core;
     BusReq_mbx  to_bus;
@@ -21,8 +25,10 @@ class Cache;
 
     cache_line_t lines[NUM_LINES];
 
-    function new(int cache_id);
+    // Constructor
+    function new(int cache_id, protocol_e protocol);
         this.cache_id = cache_id;
+        this.protocol = protocol;
 
         foreach (lines[i]) begin
             lines[i].valid = 0;
@@ -45,7 +51,7 @@ class Cache;
             $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
         end
 
-        $display("@%0t [Cache %0d] Iniciando", $time, cache_id);
+        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $time, cache_id, protocol);
 
         fork
             handle_core_requests();
@@ -75,27 +81,40 @@ class Cache;
 
             hit = (line.valid && line.tag == tag && line.state != I);
 
+            // HIT
             if (hit) begin
 
                 if (req.req_type == PrRd) begin
                     $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
                         $time, cache_id, req.address, line.state);
                 end
-                else begin
+
+                else begin // PrWr
                     $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
                         $time, cache_id, req.address, line.state);
 
                     if (line.state == S) begin
-                        bus_req = new(BusRdX, req.address, cache_id);
-                        to_bus.put(bus_req);
 
-                        from_mem.get(mem_resp);
+                        if (protocol == MSI) begin
+                            // INVALIDATE
+                            bus_req = new(BusRdX, req.address, cache_id);
+                            to_bus.put(bus_req);
+                            from_mem.get(mem_resp);
 
-                        lines[index].state = M;
+                            lines[index].state = M;
+                        end
+                        else begin
+                            // UPDATE (Firefly)
+                            bus_req = new(BusUpd, req.address, cache_id);
+                            to_bus.put(bus_req);
+
+                            // permanece en S
+                        end
                     end
                 end
-
             end
+
+            // MISS
             else begin
 
                 if (req.req_type == PrRd) begin
@@ -111,9 +130,9 @@ class Cache;
                     lines[index].tag   = tag;
                     lines[index].valid = 1;
                     lines[index].state = S;
-
                 end
-                else begin
+
+                else begin // PrWr
 
                     $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
                         $time, cache_id, req.address);
@@ -126,7 +145,6 @@ class Cache;
                     lines[index].tag   = tag;
                     lines[index].valid = 1;
                     lines[index].state = M;
-
                 end
             end
         end
@@ -143,7 +161,6 @@ class Cache;
         forever begin
             from_bus.get(evt);
 
-            // ignorar eventos propios
             if (evt.src_core_id == cache_id)
                 continue;
 
@@ -165,14 +182,8 @@ class Cache;
                 end
 
                 BusRdX: begin
-                    if (line.state == S) begin
-                        $display("@%0t [Cache %0d] SNOOP BusRdX -> S->I",
-                            $time, cache_id);
-                        lines[index].state = I;
-                        lines[index].valid = 0;
-                    end
-                    else if (line.state == M) begin
-                        $display("@%0t [Cache %0d] SNOOP BusRdX -> M->I (WB)",
+                    if (line.state == S || line.state == M) begin
+                        $display("@%0t [Cache %0d] SNOOP BusRdX -> -> I",
                             $time, cache_id);
                         lines[index].state = I;
                         lines[index].valid = 0;

@@ -5,16 +5,21 @@ module cache_tb;
     import types_pkg::*;
     import model_pkg::*;
 
-    Cache cache0;
-    Cache cache1;
+    // 4 CACHES
+    Cache cache0; // MSI
+    Cache cache1; // MSI
+    Cache cache2; // Firefly
+    Cache cache3; // Firefly
 
-    CoreReq_mbx core0_mbx;
-    CoreReq_mbx core1_mbx;
+    // MAILBOXES CORE
+    CoreReq_mbx core_mbx[4];
 
+    // BUS
     BusReq_mbx  bus_mbx;
-    BusEvt_mbx  bus_evt_mbx[2];
+    BusEvt_mbx  bus_evt_mbx[4];
 
-    MemResp_mbx mem_mbx[2];
+    // MEM
+    MemResp_mbx mem_mbx[4];
 
     initial begin
         CoreRequest req;
@@ -22,49 +27,71 @@ module cache_tb;
         BusEvent    evt;
         MemResponse mem_resp;
 
-        $display("TEST CACHE (MSI + SNOOP)");
+        $display("========================================");
+        $display(" TEST CACHE (MSI + FIREFLY COMPLETO)");
+        $display("========================================");
 
-        core0_mbx = new();
-        core1_mbx = new();
-        bus_mbx   = new();
-
+        // Crear mailboxes
+        foreach (core_mbx[i]) core_mbx[i] = new();
         foreach (bus_evt_mbx[i]) bus_evt_mbx[i] = new();
         foreach (mem_mbx[i]) mem_mbx[i] = new();
 
-        cache0 = new(0);
-        cache1 = new(1);
+        bus_mbx = new();
 
-        // conexiones
-        cache0.from_core = core0_mbx;
-        cache1.from_core = core1_mbx;
+        // Crear caches
+        cache0 = new(0, Cache::MSI);
+        cache1 = new(1, Cache::MSI);
+        cache2 = new(2, Cache::FIREFLY);
+        cache3 = new(3, Cache::FIREFLY);
+
+        // Conexiones
+        cache0.from_core = core_mbx[0];
+        cache1.from_core = core_mbx[1];
+        cache2.from_core = core_mbx[2];
+        cache3.from_core = core_mbx[3];
 
         cache0.to_bus = bus_mbx;
         cache1.to_bus = bus_mbx;
+        cache2.to_bus = bus_mbx;
+        cache3.to_bus = bus_mbx;
 
-        cache0.from_bus = bus_evt_mbx[0];
-        cache1.from_bus = bus_evt_mbx[1];
+        foreach (bus_evt_mbx[i]) begin
+            cache0.from_bus = bus_evt_mbx[0];
+            cache1.from_bus = bus_evt_mbx[1];
+            cache2.from_bus = bus_evt_mbx[2];
+            cache3.from_bus = bus_evt_mbx[3];
+        end
 
-        cache0.from_mem = mem_mbx[0];
-        cache1.from_mem = mem_mbx[1];
+        foreach (mem_mbx[i]) begin
+            cache0.from_mem = mem_mbx[0];
+            cache1.from_mem = mem_mbx[1];
+            cache2.from_mem = mem_mbx[2];
+            cache3.from_mem = mem_mbx[3];
+        end
 
         fork
             cache0.run();
             cache1.run();
+            cache2.run();
+            cache3.run();
 
-            // BUS GLOBAL
+            // BUS DUMMY GLOBAL
             forever begin
                 bus_mbx.get(bus_req);
 
-                $display("@%0t [BUS] req type=%0d addr=%h from core=%0d",
+                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
                     $time, bus_req.req_type, bus_req.address, bus_req.src_core_id);
 
-                // broadcast
+                // broadcast a TODOS
                 evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-                bus_evt_mbx[0].put(evt);
-                bus_evt_mbx[1].put(evt);
+
+                foreach (bus_evt_mbx[i]) begin
+                    bus_evt_mbx[i].put(evt);
+                end
 
                 #10;
 
+                // respuesta de memoria al core correcto
                 mem_resp = new(bus_req.address, bus_req.src_core_id);
                 mem_mbx[bus_req.src_core_id].put(mem_resp);
             end
@@ -73,12 +100,45 @@ module cache_tb;
 
         #10;
 
-        // ESCENARIO DE COHERENCIA
-        req = new(PrRd, 32'h1000, 0); core0_mbx.put(req); #20;
-        req = new(PrRd, 32'h1000, 1); core1_mbx.put(req); #20;
-        req = new(PrWr, 32'h1000, 1); core1_mbx.put(req); #40;
+        // MSI TEST (cache0 y cache1)
+        $display("\nMSI TEST");
 
-        $display("FIN TEST");
+        // I -> S
+        req = new(PrRd, 32'h1000, 0); core_mbx[0].put(req); #20;
+
+        // S -> S (mismo core)
+        req = new(PrRd, 32'h1000, 0); core_mbx[0].put(req); #20;
+
+        // otro core lee → ambos en S
+        req = new(PrRd, 32'h1000, 1); core_mbx[1].put(req); #20;
+
+        // write → S -> M + invalidate
+        req = new(PrWr, 32'h1000, 0); core_mbx[0].put(req); #40;
+
+        // otro lee → M -> S
+        req = new(PrRd, 32'h1000, 1); core_mbx[1].put(req); #40;
+
+        // write del otro → invalida
+        req = new(PrWr, 32'h1000, 1); core_mbx[1].put(req); #40;
+
+        // FIREFLY TEST (cache2 y cache3)
+        $display("\nFIREFLY TEST");
+
+        // I -> S
+        req = new(PrRd, 32'h2000, 2); core_mbx[2].put(req); #20;
+        req = new(PrRd, 32'h2000, 3); core_mbx[3].put(req); #20;
+
+        // WRITE → UPDATE (NO invalidate)
+        req = new(PrWr, 32'h2000, 3); core_mbx[3].put(req); #40;
+
+        // ambos siguen en S
+        req = new(PrRd, 32'h2000, 2); core_mbx[2].put(req); #20;
+        req = new(PrRd, 32'h2000, 3); core_mbx[3].put(req); #20;
+
+        // otro update
+        req = new(PrWr, 32'h2000, 2); core_mbx[2].put(req); #40;
+
+        $display("\nFIN TEST COMPLETO");
         #50;
         $finish;
     end
