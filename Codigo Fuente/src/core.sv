@@ -1,3 +1,4 @@
+import types_pkg::*;
 class Core;
 
     // Parámetros

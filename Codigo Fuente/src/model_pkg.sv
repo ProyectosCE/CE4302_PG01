@@ -9,7 +9,6 @@ package model_pkg;
     // Parámetros globales del sistema
     parameter int NUM_CORES = 4;
 
-    // Inclusión de componentes
     `include "core.sv"
     `include "cache.sv"
     `include "bus.sv"

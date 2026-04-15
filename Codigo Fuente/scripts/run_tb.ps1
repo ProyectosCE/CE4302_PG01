@@ -37,23 +37,27 @@ for ($i = 0; $i -lt $tbModules.Count; $i++) {
     Write-Host ("[$i] $($tbModules[$i]) ($($tbFiles[$i]))")
 }
 
+
+# Leer y validar la selección del usuario de forma robusta
 $selected = Read-Host 'Ingrese el numero del testbench que desea simular'
-if (-not ($selected -as [int]) -or $selected -lt 0 -or $selected -ge $tbModules.Count) {
-    Write-Host 'Selección invalida. Abortando.' -ForegroundColor Red
+[int]$selectedInt = -1
+if (-not [int]::TryParse($selected, [ref]$selectedInt) -or $selectedInt -lt 0 -or $selectedInt -ge $tbModules.Count) {
+    Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
     exit 1
 }
-$tbName = $tbModules[$selected]
+$tbName = $tbModules[$selectedInt]
 
 
 
 
 # Usar rutas relativas y comillas dobles en el archivo .do, asegurando que cada línea sea una sola línea
-$srcRel = '../src/*.sv'
-$tbRel = '../tb/*.sv'
+
+# Compilar primero los packages, luego el resto de los archivos
 $doLines = @(
     'vlib work',
-    ('vlog "' + $srcRel + '"'),
-    ('vlog "' + $tbRel + '"'),
+    'vlog "../src/types_pkg.sv"',
+    'vlog "../src/model_pkg.sv"',
+    'vlog "../tb/*.sv"',
     ('vsim ' + $tbName),
     'run -all',
     'quit'
