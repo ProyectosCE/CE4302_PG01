@@ -8,7 +8,7 @@ class Cache;
     // Mailboxes
     CoreReq_mbx from_core;
     BusReq_mbx  to_bus;
-    BusEvt_mbx  from_bus;   // aún no usado
+    BusEvt_mbx  from_bus;
     MemResp_mbx from_mem;
 
     typedef enum {I, S, M} state_e;
@@ -41,7 +41,7 @@ class Cache;
 
     virtual task run();
 
-        if (from_core == null || to_bus == null || from_mem == null) begin
+        if (from_core == null || to_bus == null || from_mem == null || from_bus == null) begin
             $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
         end
 
@@ -49,10 +49,12 @@ class Cache;
 
         fork
             handle_core_requests();
+            handle_bus_snoop();
         join
 
     endtask
 
+    // CORE
     task handle_core_requests();
 
         CoreRequest req;
@@ -73,26 +75,27 @@ class Cache;
 
             hit = (line.valid && line.tag == tag && line.state != I);
 
-            // HIT
             if (hit) begin
 
                 if (req.req_type == PrRd) begin
-                    $display("@%0t [Cache %0d] PrRd %h -> HIT (state=%0d)",
+                    $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
                         $time, cache_id, req.address, line.state);
                 end
                 else begin
-                    $display("@%0t [Cache %0d] PrWr %h -> HIT (state=%0d)",
+                    $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
                         $time, cache_id, req.address, line.state);
 
-                    // Upgrade S -> M
                     if (line.state == S) begin
+                        bus_req = new(BusRdX, req.address, cache_id);
+                        to_bus.put(bus_req);
+
+                        from_mem.get(mem_resp);
+
                         lines[index].state = M;
                     end
                 end
 
             end
-
-            // MISS
             else begin
 
                 if (req.req_type == PrRd) begin
@@ -103,11 +106,7 @@ class Cache;
                     bus_req = new(BusRd, req.address, cache_id);
                     to_bus.put(bus_req);
 
-                    // esperar memoria
                     from_mem.get(mem_resp);
-
-                    $display("@%0t [Cache %0d] MemResp recibido -> cargar en S",
-                        $time, cache_id);
 
                     lines[index].tag   = tag;
                     lines[index].valid = 1;
@@ -122,11 +121,7 @@ class Cache;
                     bus_req = new(BusRdX, req.address, cache_id);
                     to_bus.put(bus_req);
 
-                    // esperar memoria
                     from_mem.get(mem_resp);
-
-                    $display("@%0t [Cache %0d] MemResp recibido -> cargar en M",
-                        $time, cache_id);
 
                     lines[index].tag   = tag;
                     lines[index].valid = 1;
@@ -134,6 +129,64 @@ class Cache;
 
                 end
             end
+        end
+    endtask
+
+    // SNOOP
+    task handle_bus_snoop();
+
+        BusEvent evt;
+        int index;
+        logic [31:0] tag;
+        cache_line_t line;
+
+        forever begin
+            from_bus.get(evt);
+
+            // ignorar eventos propios
+            if (evt.src_core_id == cache_id)
+                continue;
+
+            index = get_index(evt.address);
+            tag   = get_tag(evt.address);
+            line  = lines[index];
+
+            if (!(line.valid && line.tag == tag))
+                continue;
+
+            case (evt.req_type)
+
+                BusRd: begin
+                    if (line.state == M) begin
+                        $display("@%0t [Cache %0d] SNOOP BusRd -> M->S (WB)",
+                            $time, cache_id);
+                        lines[index].state = S;
+                    end
+                end
+
+                BusRdX: begin
+                    if (line.state == S) begin
+                        $display("@%0t [Cache %0d] SNOOP BusRdX -> S->I",
+                            $time, cache_id);
+                        lines[index].state = I;
+                        lines[index].valid = 0;
+                    end
+                    else if (line.state == M) begin
+                        $display("@%0t [Cache %0d] SNOOP BusRdX -> M->I (WB)",
+                            $time, cache_id);
+                        lines[index].state = I;
+                        lines[index].valid = 0;
+                    end
+                end
+
+                BusUpd: begin
+                    if (line.state == S) begin
+                        $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece S",
+                            $time, cache_id);
+                    end
+                end
+
+            endcase
         end
     endtask
 
