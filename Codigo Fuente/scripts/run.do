@@ -1,5 +1,6 @@
 vlib work
+vlog ../src/*.sv
 vlog ../tb/*.sv
-vsim top_tb
+vsim types_tb
 run -all
 quit
