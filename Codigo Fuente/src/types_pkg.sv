@@ -26,6 +26,10 @@ package types_pkg;
             this.address = address;
             this.src_core_id = src_core_id;
         endfunction
+
+        function void print();
+            $display("[CoreRequest] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
+        endfunction
     endclass
 
     // BusRequest
@@ -38,6 +42,10 @@ package types_pkg;
             this.req_type = req_type;
             this.address = address;
             this.src_core_id = src_core_id;
+        endfunction
+
+        function void print();
+            $display("[BusRequest] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
         endfunction
     endclass
 
@@ -52,6 +60,10 @@ package types_pkg;
             this.address = address;
             this.src_core_id = src_core_id;
         endfunction
+
+        function void print();
+            $display("[BusEvent] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
+        endfunction
     endclass
 
     // MemResponse
@@ -63,6 +75,16 @@ package types_pkg;
             this.address = address;
             this.dest_core_id = dest_core_id;
         endfunction
+
+        function void print();
+            $display("[MemResponse] addr=%h dest=%0d", address, dest_core_id);
+        endfunction
     endclass
+
+    // Typedefs para mailboxes
+    typedef mailbox #(CoreRequest) CoreReq_mbx;
+    typedef mailbox #(BusRequest)  BusReq_mbx;
+    typedef mailbox #(BusEvent)    BusEvt_mbx;
+    typedef mailbox #(MemResponse) MemResp_mbx;
 
 endpackage
