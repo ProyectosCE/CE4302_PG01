@@ -12,6 +12,11 @@
  *
  * COMPORTAMIENTO ESPERADO:
  *   - Se observan logs de envío de solicitudes y recepción en la "dummy cache".
+ *
+ * NOTA DE TIEMPO:
+ *   - El testbench configura formato en ns y usa $realtime para mostrar
+ *     marcas temporales con precisión fraccional cuando aplique.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 `timescale 1ns/1ns
@@ -27,6 +32,9 @@ module core_tb;
 
     initial begin
         CoreRequest req;
+
+        // Formato de impresión temporal en ns para trazas más legibles.
+        $timeformat(-9, 3, " ns", 10);
 
         $display("=================================");
         $display(" TEST CORE (TRACE PLAYER)");
@@ -55,7 +63,7 @@ module core_tb;
                 core_to_cache_mbx.get(rcv);
 
                 $display("@%0t [DUMMY CACHE] Recibido %s addr=%h core=%0d",
-                    $time,
+                    $realtime,
                     (rcv.req_type == PrRd) ? "PrRd" : "PrWr",
                     rcv.address,
                     rcv.src_core_id);

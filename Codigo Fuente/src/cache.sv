@@ -21,6 +21,11 @@
  * PROTOCOLOS INVOLUCRADOS:
  *   - MSI: Write-invalidate
  *   - Firefly: Write-update simplificado
+ *
+ * MANEJO DE TIEMPO EN LOGS:
+ *   - Se emplea $realtime para preservar precisión temporal en impresiones,
+ *     incluyendo valores fraccionales cuando aplica en simulación.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 import types_pkg::*;
@@ -174,7 +179,7 @@ class Cache;
             $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
         end
 
-        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $time, cache_id, protocol);
+        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $realtime, cache_id, protocol);
 
         fork
             handle_core_requests(); // Atiende peticiones del core
@@ -216,12 +221,12 @@ class Cache;
 
                 if (req.req_type == PrRd) begin
                     $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
-                        $time, cache_id, req.address, line.state);
+                        $realtime, cache_id, req.address, line.state);
                 end
 
                 else begin // PrWr
                     $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
-                        $time, cache_id, req.address, line.state);
+                        $realtime, cache_id, req.address, line.state);
 
                     // Escritura sobre línea en estado S
                     if (line.state == S) begin
@@ -254,7 +259,7 @@ class Cache;
 
 
                     $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
-                        $time, cache_id, req.address);
+                        $realtime, cache_id, req.address);
 
                     // Solicita lectura al bus (BusRd)
                     bus_req = new(BusRd, req.address, cache_id);
@@ -271,7 +276,7 @@ class Cache;
                 else begin // PrWr
 
                     $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
-                        $time, cache_id, req.address);
+                        $realtime, cache_id, req.address);
 
                     // Solicita escritura exclusiva al bus (BusRdX)
                     bus_req = new(BusRdX, req.address, cache_id);
@@ -325,7 +330,7 @@ class Cache;
                         // Otro core solicita lectura y esta caché tiene la línea modificada
                         // Transición M->S y (en modelo real) escribiría back a memoria
                         $display("@%0t [Cache %0d] SNOOP BusRd -> M->S (WB)",
-                            $time, cache_id);
+                            $realtime, cache_id);
                         lines[index].state = S;
                     end
                 end
@@ -335,7 +340,7 @@ class Cache;
                     if (line.state == S || line.state == M) begin
                         // Otro core solicita escritura exclusiva, se invalida la línea local
                         $display("@%0t [Cache %0d] SNOOP BusRdX -> -> I",
-                            $time, cache_id);
+                            $realtime, cache_id);
                         lines[index].state = I;
                         lines[index].valid = 0;
                     end
@@ -346,7 +351,7 @@ class Cache;
                     if (line.state == S) begin
                         // Otro core realiza update, la línea permanece en S (Firefly)
                         $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece S",
-                            $time, cache_id);
+                            $realtime, cache_id);
                     end
                 end
 

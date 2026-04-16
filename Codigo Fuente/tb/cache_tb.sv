@@ -13,6 +13,11 @@
  * COMPORTAMIENTO ESPERADO:
  *   - Se observan logs de hits, misses, transiciones de estado y eventos de bus.
  *   - Se valida la correcta interacción entre caches, bus y memoria.
+ *
+ * NOTA DE TIEMPO:
+ *   - Se fija el formato temporal en ns y se usa $realtime para que los logs
+ *     reflejen con precisión cualquier fracción de tiempo de simulación.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 `timescale 1ns/1ns
@@ -43,6 +48,9 @@ module cache_tb;
         BusRequest  bus_req;
         BusEvent    evt;
         MemResponse mem_resp;
+
+        // Formato de impresión temporal en ns para trazas coherentes en consola.
+        $timeformat(-9, 3, " ns", 10);
 
         $display("========================================");
         $display(" TEST CACHE (MSI + FIREFLY COMPLETO)");
@@ -99,7 +107,7 @@ module cache_tb;
                 bus_mbx.get(bus_req);
 
                 $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $time, bus_req.req_type, bus_req.address, bus_req.src_core_id);
+                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
 
                 // broadcast a TODOS
                 evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
