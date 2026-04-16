@@ -84,25 +84,35 @@ Si la licencia está correctamente configurada, se abrirá Questa sin errores.
 
 ## 4. Uso desde Visual Studio Code
 
-1. Abrir la carpeta `Codigo Fuente` en VS Code
-2. Abrir una terminal integrada
-3. Navegar a la carpeta de simulación:
+### 4.1 Simulación interactiva de testbenches (recomendado)
+
+Se puede ejecutar cualquier testbench de la carpeta `tb/` de forma interactiva usando el script de PowerShell (Se debe estar en la carpeta raíz `CE4302_PG01`):
+
+```powershell
+cd "Codigo Fuente"
+powershell -ExecutionPolicy Bypass -File scripts\run_tb.ps1
+```
+
+El script:
+
+- Muestra una lista de los testbenches disponibles en `tb/`.
+- Permite seleccionar cuál simular.
+- Compila automáticamente los archivos de `src/` y `tb/`.
+- Ejecuta la simulación en modo consola (sin abrir la GUI de Questa).
+- Elimina el archivo temporal de comandos `.do` al finalizar.
+
+La salida de la simulación se mostrará directamente en la terminal.
+
+### 4.2 Simulación manual (opcional)
+
+También se puede ejecutar la simulación de la forma tradicional:
 
 ```bash
 cd sim
-```
-
-4. Ejecutar la simulación:
-
-```bash
 vsim -do ../scripts/run.do
 ```
 
-Este comando:
-
-- Compila los archivos SystemVerilog
-- Ejecuta el testbench
-- Corre la simulación completa
+Esto compilará y ejecutará el testbench especificado en el archivo `run.do`.
 
 ---
 
