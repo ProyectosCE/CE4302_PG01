@@ -43,6 +43,8 @@ import types_pkg::*;
  *
  * INTERACCIÓN:
  *   - Interactúa únicamente con la caché mediante mailbox.
+ *   - La tarea run se mantiene virtual para permitir polimorfismo y
+ *     extensiones futuras mediante herencia (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
  * ============================================
  */
 class Core;
@@ -88,6 +90,7 @@ class Core;
      * @brief Tarea principal del core. Envía secuencialmente las solicitudes de la cola
      *        a la caché asociada, simulando el comportamiento de un procesador.
      *        Incluye mensajes de debug para seguimiento.
+     *        Se declara virtual para que subclases puedan especializar su ejecución (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
      */
     virtual task run();
 

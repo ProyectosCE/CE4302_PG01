@@ -53,6 +53,8 @@ import types_pkg::*;
  *
  * INTERACCIÓN:
  *   - Interactúa con Core, Bus y Memoria mediante mailboxes.
+ *   - Las tareas run, handle_core_requests y handle_bus_snoop son virtuales
+ *     para habilitar polimorfismo y extensión futura por herencia.
  * ============================================
  */
 class Cache;
@@ -172,6 +174,7 @@ class Cache;
      * @brief Tarea principal de la caché. Inicia la atención de solicitudes del core y
      *        el procesamiento de eventos de bus en paralelo.
      *        Verifica la inicialización de los mailboxes.
+     *        Se declara virtual para permitir especializaciones en subclases.
      */
     virtual task run();
 
@@ -194,8 +197,9 @@ class Cache;
      *        de estado de las líneas de caché según el protocolo de coherencia.
      *        Implementa la lógica de hit/miss y la interacción con el bus/memoria.
      *        Parte fundamental del protocolo MSI/Firefly.
+     *        Se declara virtual para permitir override sin alterar la API (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
      */
-    task handle_core_requests();
+    virtual task handle_core_requests();
 
         CoreRequest req;
         BusRequest bus_req;
@@ -299,8 +303,9 @@ class Cache;
      *        Procesa los mensajes de broadcast y actualiza el estado de las líneas locales
      *        según el tipo de evento y el protocolo.
      *        Parte fundamental del protocolo MSI/Firefly.
+     *        Se declara virtual para facilitar extensiones de comportamiento (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
      */
-    task handle_bus_snoop();
+        virtual task handle_bus_snoop();
 
         BusEvent evt;
         int index;
