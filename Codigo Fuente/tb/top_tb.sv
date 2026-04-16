@@ -1,3 +1,22 @@
+
+/*
+ * ============================================
+ * ARCHIVO: top_tb.sv
+ * DESCRIPCIÓN GENERAL:
+ *   Testbench de integración para el sistema multicore completo.
+ *   Instancia y conecta todos los componentes: cores, caches, bus y memoria.
+ *   Simula escenarios de alta contención, productor-consumidor y migración de ownership.
+ *
+ * ESCENARIOS PROBADOS:
+ *   1. Alta contención: Todos los cores acceden a la misma dirección.
+ *   2. Productor-consumidor: Unos cores escriben y otros leen la misma dirección.
+ *   3. Migración de ownership: Escrituras sucesivas por diferentes cores.
+ *
+ * COMPORTAMIENTO ESPERADO:
+ *   - Se observan logs de solicitudes, transiciones de estado y eventos de bus.
+ *   - Se valida la correcta interacción y coherencia entre todos los módulos.
+ * ============================================
+ */
 `timescale 1ns/1ns
 
 module top_tb;
@@ -5,20 +24,24 @@ module top_tb;
     import types_pkg::*;
     import model_pkg::*;
 
-    // CONFIG
+    // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
 
-    // COMPONENTES
+    // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
 
+    // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
     BusEvt_mbx  bus_evt_mbx   [NUM_CORES];
     MemResp_mbx mem_mbx       [NUM_CORES];
 
     BusReq_mbx bus_mbx;
 
-    // CREAR SISTEMA LIMPIO
+    /**
+     * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
+     *        Lanza en paralelo la ejecución de caches y el bus/memoria.
+     */
     task setup_system();
 
         bus_mbx = new();
@@ -39,14 +62,14 @@ module top_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
-        // CACHES EN PARALELO 
+        // CACHES y BUS/MEMORIA en paralelo
         fork
             caches[0].run();
             caches[1].run();
             caches[2].run();
             caches[3].run();
 
-            // BUS + MEMORIA
+            // BUS + MEMORIA: simula el bus compartido y la memoria principal
             forever begin
                 BusRequest  bus_req;
                 BusEvent    evt;
@@ -75,7 +98,9 @@ module top_tb;
 
     endtask
 
-    // EJECUTAR CORES
+    /**
+     * @brief Ejecuta todos los cores en paralelo, procesando sus traces de solicitudes.
+     */
     task run_cores();
         fork
             cores[0].run();
