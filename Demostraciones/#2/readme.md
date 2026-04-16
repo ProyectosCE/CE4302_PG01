@@ -372,7 +372,7 @@ El buffer se limita a un conjunto pequeño de direcciones (8–16), lo cual incr
 
 Una misma dirección es escrita de forma alternada:
 
-* Core0 → Core1 → Core2 → Core3 → ...
+* Core0 -> Core1 -> Core2 -> Core3 -> ...
 
 Este patrón genera transferencias constantes de ownership, siendo particularmente demandante para protocolos basados en invalidación.
 
