@@ -13,6 +13,12 @@
  * COMPORTAMIENTO ESPERADO:
  *   - Se deben observar impresiones correctas de cada tipo.
  *   - El mailbox debe transmitir correctamente una solicitud.
+ *
+ * NOTA DE TIEMPO:
+ *   - Se configura $timeformat para mostrar tiempos en ns con una cifra decimal.
+ *   - Aunque este test no imprime marcas temporales, se mantiene el mismo criterio
+ *     de precisión temporal para consistencia entre testbenches.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 `timescale 1ns/1ns
@@ -29,6 +35,9 @@ module types_tb;
         MemResponse mr;
         CoreReq_mbx mbx;
         CoreRequest cr2;
+
+        // Formato de impresión temporal unificado para todos los testbenches.
+        $timeformat(-9, 3, " ns", 10);
 
         $display("TEST types_pkg");
 

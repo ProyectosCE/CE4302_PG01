@@ -21,6 +21,11 @@
  * PROTOCOLOS INVOLUCRADOS:
  *   - MSI: Write-invalidate
  *   - Firefly: Write-update simplificado
+ *
+ * MANEJO DE TIEMPO EN LOGS:
+ *   - Se emplea $realtime para preservar precisión temporal en impresiones,
+ *     incluyendo valores fraccionales cuando aplica en simulación.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 import types_pkg::*;
@@ -48,6 +53,8 @@ import types_pkg::*;
  *
  * INTERACCIÓN:
  *   - Interactúa con Core, Bus y Memoria mediante mailboxes.
+ *   - Delega la lógica de coherencia a una estrategia polimórfica (ProtocolBase),
+ *     permitiendo extensión futura sin modificar la clase Cache.
  * ============================================
  */
 class Cache;
@@ -75,7 +82,13 @@ class Cache;
     /**
      * @brief Protocolo de coherencia utilizado por la instancia.
      */
-    protocol_e protocol;
+    protocol_e protocol_mode;
+
+    /**
+     * @brief Estrategia polimórfica de coherencia (MSI o Firefly).
+     *        Cache delega aquí el comportamiento específico del protocolo.
+     */
+    ProtocolBase protocol;
 
 
     // MAILBOXES DE COMUNICACIÓN 
@@ -96,29 +109,6 @@ class Cache;
      */
     MemResp_mbx from_mem;
 
-
-    /**
-     * @brief Enum de estados de línea de caché (protocolo MSI).
-     *   - I: Invalid
-     *   - S: Shared
-     *   - M: Modified
-     */
-    typedef enum {I, S, M} state_e;
-
-
-    /**
-     * @brief Estructura que representa una línea de caché.
-     *   - tag: etiqueta de la dirección almacenada
-     *   - state: estado de coherencia (I/S/M)
-     *   - valid: indica si la línea contiene datos válidos
-     */
-    typedef struct {
-        logic [31:0] tag;
-        state_e state;
-        bit valid;
-    } cache_line_t;
-
-
     /**
      * @brief Array de líneas de caché (directamente mapeada).
      */
@@ -129,11 +119,27 @@ class Cache;
      * @brief Constructor de la clase Cache.
      * @param cache_id Identificador de la caché (core asociado)
      * @param protocol Protocolo de coherencia a utilizar (MSI/Firefly)
-     * Inicializa todas las líneas en estado inválido.
+     * Inicializa todas las líneas en estado inválido y selecciona dinámicamente
+     * la implementación polimórfica del protocolo de coherencia.
      */
-    function new(int cache_id, protocol_e protocol);
+    function new(int cache_id, protocol_e protocol_sel);
+        ProtocolMSI     msi_impl;
+        ProtocolFirefly firefly_impl;
+
         this.cache_id = cache_id;
-        this.protocol = protocol;
+        this.protocol_mode = protocol_sel;
+
+        case (protocol_sel)
+            MSI: begin
+                msi_impl = new();
+                this.protocol = msi_impl;
+            end
+            FIREFLY: begin
+                firefly_impl = new();
+                this.protocol = firefly_impl;
+            end
+            default: $fatal(1, "[Cache %0d] Protocolo invalido: %0d", cache_id, protocol_sel);
+        endcase
 
         foreach (lines[i]) begin
             lines[i].valid = 0;
@@ -167,6 +173,7 @@ class Cache;
      * @brief Tarea principal de la caché. Inicia la atención de solicitudes del core y
      *        el procesamiento de eventos de bus en paralelo.
      *        Verifica la inicialización de los mailboxes.
+     *        Se declara virtual para permitir especializaciones en subclases.
      */
     virtual task run();
 
@@ -174,7 +181,11 @@ class Cache;
             $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
         end
 
-        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $time, cache_id, protocol);
+        if (protocol == null) begin
+            $fatal(1, "[Cache %0d] Protocolo no inicializado", cache_id);
+        end
+
+        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $realtime, cache_id, protocol_mode);
 
         fork
             handle_core_requests(); // Atiende peticiones del core
@@ -186,105 +197,32 @@ class Cache;
 
     /**
      * @brief Atiende solicitudes del core (lectura/escritura) y gestiona las transiciones
-     *        de estado de las líneas de caché según el protocolo de coherencia.
-     *        Implementa la lógica de hit/miss y la interacción con el bus/memoria.
-     *        Parte fundamental del protocolo MSI/Firefly.
+     *        delegando completamente la decisión de coherencia al protocolo activo.
+     *        Cache conserva únicamente responsabilidades de almacenamiento,
+     *        indexado y orquestación de comunicación.
+     *        Se declara virtual para permitir override sin alterar la API.
      */
-    task handle_core_requests();
+    virtual task handle_core_requests();
 
         CoreRequest req;
-        BusRequest bus_req;
-        MemResponse mem_resp;
-
         int index;
         logic [31:0] tag;
-        cache_line_t line;
-        bit hit;
 
         forever begin
             from_core.get(req); // Espera solicitud del core
 
             index = get_index(req.address);
             tag   = get_tag(req.address);
-            line  = lines[index];
 
-            // Determina si hay HIT: línea válida, tag coincide y no está inválida
-            hit = (line.valid && line.tag == tag && line.state != I);
-
-            // HIT 
-            if (hit) begin
-
-                if (req.req_type == PrRd) begin
-                    $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
-                        $time, cache_id, req.address, line.state);
-                end
-
-                else begin // PrWr
-                    $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
-                        $time, cache_id, req.address, line.state);
-
-                    // Escritura sobre línea en estado S
-                    if (line.state == S) begin
-
-                        if (protocol == MSI) begin
-                            // MSI: Write-invalidate
-                            // Solicita invalidación a otros caches (BusRdX)
-                            bus_req = new(BusRdX, req.address, cache_id);
-                            to_bus.put(bus_req);
-                            from_mem.get(mem_resp); // Espera respuesta de memoria
-
-                            lines[index].state = M; // Transición a Modified
-                        end
-                        else begin
-                            // Firefly: Write-update
-                            // Solicita actualización a otros caches (BusUpd)
-                            bus_req = new(BusUpd, req.address, cache_id);
-                            to_bus.put(bus_req);
-
-                            // Permanece en estado S (Firefly)
-                        end
-                    end
-                end
-            end
-
-            // MISS 
-            else begin
-
-                if (req.req_type == PrRd) begin
-
-
-                    $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
-                        $time, cache_id, req.address);
-
-                    // Solicita lectura al bus (BusRd)
-                    bus_req = new(BusRd, req.address, cache_id);
-                    to_bus.put(bus_req);
-
-                    from_mem.get(mem_resp); // Espera respuesta de memoria
-
-                    // Actualiza línea: válida, estado S
-                    lines[index].tag   = tag;
-                    lines[index].valid = 1;
-                    lines[index].state = S;
-                end
-
-                else begin // PrWr
-
-                    $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
-                        $time, cache_id, req.address);
-
-                    // Solicita escritura exclusiva al bus (BusRdX)
-                    bus_req = new(BusRdX, req.address, cache_id);
-                    to_bus.put(bus_req);
-
-                    from_mem.get(mem_resp); // Espera respuesta de memoria
-
-                    // Actualiza línea: válida, estado M
-                    lines[index].tag   = tag;
-                    lines[index].valid = 1;
-                    lines[index].state = M;
-                end
-            end
+            protocol.handle_core_request(
+                cache_id,
+                req,
+                index,
+                tag,
+                lines[index],
+                to_bus,
+                from_mem
+            );
         end
     endtask
 
@@ -292,15 +230,14 @@ class Cache;
     /**
      * @brief Atiende eventos de bus (snooping) para mantener la coherencia de caché.
      *        Procesa los mensajes de broadcast y actualiza el estado de las líneas locales
-     *        según el tipo de evento y el protocolo.
-     *        Parte fundamental del protocolo MSI/Firefly.
+     *        según el tipo de evento delegando la semántica al protocolo activo.
+     *        Se declara virtual para facilitar extensiones de comportamiento.
      */
-    task handle_bus_snoop();
+    virtual task handle_bus_snoop();
 
         BusEvent evt;
         int index;
         logic [31:0] tag;
-        cache_line_t line;
 
         forever begin
             from_bus.get(evt); // Espera evento de bus
@@ -311,46 +248,14 @@ class Cache;
 
             index = get_index(evt.address);
             tag   = get_tag(evt.address);
-            line  = lines[index];
 
-            // Solo procesa si la línea es válida y el tag coincide
-            if (!(line.valid && line.tag == tag))
-                continue;
-
-            case (evt.req_type)
-
-                // BusRd 
-                BusRd: begin
-                    if (line.state == M) begin
-                        // Otro core solicita lectura y esta caché tiene la línea modificada
-                        // Transición M->S y (en modelo real) escribiría back a memoria
-                        $display("@%0t [Cache %0d] SNOOP BusRd -> M->S (WB)",
-                            $time, cache_id);
-                        lines[index].state = S;
-                    end
-                end
-
-                // BusRdX
-                BusRdX: begin
-                    if (line.state == S || line.state == M) begin
-                        // Otro core solicita escritura exclusiva, se invalida la línea local
-                        $display("@%0t [Cache %0d] SNOOP BusRdX -> -> I",
-                            $time, cache_id);
-                        lines[index].state = I;
-                        lines[index].valid = 0;
-                    end
-                end
-
-                // BusUpd (Firefly)
-                BusUpd: begin
-                    if (line.state == S) begin
-                        // Otro core realiza update, la línea permanece en S (Firefly)
-                        $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece S",
-                            $time, cache_id);
-                    end
-                end
-
-            endcase
+            protocol.handle_snoop(
+                cache_id,
+                evt,
+                index,
+                tag,
+                lines[index]
+            );
         end
     endtask
 

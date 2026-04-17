@@ -17,6 +17,11 @@
  *
  * PROTOCOLOS INVOLUCRADOS:
  *   - Compatible con MSI y Firefly a través de la caché.
+ *
+ * MANEJO DE TIEMPO EN LOGS:
+ *   - Para trazas se utiliza $realtime en lugar de $time, permitiendo reflejar
+ *     tiempos fraccionales cuando la simulación tiene precisión menor al timeunit.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
 import types_pkg::*;
@@ -38,6 +43,8 @@ import types_pkg::*;
  *
  * INTERACCIÓN:
  *   - Interactúa únicamente con la caché mediante mailbox.
+ *   - La tarea run se mantiene virtual para permitir polimorfismo y
+ *     extensiones futuras mediante herencia (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
  * ============================================
  */
 class Core;
@@ -83,6 +90,7 @@ class Core;
      * @brief Tarea principal del core. Envía secuencialmente las solicitudes de la cola
      *        a la caché asociada, simulando el comportamiento de un procesador.
      *        Incluye mensajes de debug para seguimiento.
+     *        Se declara virtual para que subclases puedan especializar su ejecución (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
      */
     virtual task run();
 
@@ -91,13 +99,13 @@ class Core;
         end
 
         $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",
-            $time, core_id, trace_queue.size());
+            $realtime, core_id, trace_queue.size());
 
         foreach (trace_queue[i]) begin
             CoreRequest req = trace_queue[i];
 
             $display("@%0t [Core %0d] Enviando %s addr=%h",
-                $time, core_id,
+                $realtime, core_id,
                 (req.req_type == PrRd) ? "PrRd" : "PrWr",
                 req.address);
 
@@ -106,7 +114,7 @@ class Core;
             #10; // delay entre instrucciones (simulación)
         end
 
-        $display("@%0t [Core %0d] Finalizo ejecucion", $time, core_id);
+        $display("@%0t [Core %0d] Finalizo ejecucion", $realtime, core_id);
 
     endtask
 

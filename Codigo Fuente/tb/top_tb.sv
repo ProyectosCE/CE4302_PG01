@@ -15,9 +15,14 @@
  * COMPORTAMIENTO ESPERADO:
  *   - Se observan logs de solicitudes, transiciones de estado y eventos de bus.
  *   - Se valida la correcta interacción y coherencia entre todos los módulos.
+ *
+ * NOTA DE TIEMPO:
+ *   - Se utiliza $realtime para trazas más precisas y se configura $timeformat
+ *     para visualizar tiempos en ns de forma uniforme.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
-`timescale 1ns/1ns
+`timescale 1ns/1ps
 
 module top_tb;
 
@@ -78,7 +83,7 @@ module top_tb;
                 bus_mbx.get(bus_req);
 
                 $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $time, bus_req.req_type, bus_req.address, bus_req.src_core_id);
+                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
 
                 evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
 
@@ -87,7 +92,7 @@ module top_tb;
                 bus_evt_mbx[2].put(evt);
                 bus_evt_mbx[3].put(evt);
 
-                #10;
+                #10.5;
 
                 mem_resp = new(bus_req.address, bus_req.src_core_id);
                 mem_mbx[bus_req.src_core_id].put(mem_resp);
@@ -114,6 +119,9 @@ module top_tb;
     initial begin
 
         CoreRequest req;
+
+        // Formato temporal global del testbench de integración (ns con 1 decimal).
+        $timeformat(-9, 3, " ns", 10);
 
         $display("========================================");
         $display("   DEMO 2 - SISTEMA MULTICORE COMPLETO");
