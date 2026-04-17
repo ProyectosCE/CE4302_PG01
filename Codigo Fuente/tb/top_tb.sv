@@ -22,7 +22,7 @@
  *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
  * ============================================
  */
-`timescale 1ns/1ns
+`timescale 1ns/1ps
 
 module top_tb;
 
@@ -92,7 +92,7 @@ module top_tb;
                 bus_evt_mbx[2].put(evt);
                 bus_evt_mbx[3].put(evt);
 
-                #10;
+                #10.5;
 
                 mem_resp = new(bus_req.address, bus_req.src_core_id);
                 mem_mbx[bus_req.src_core_id].put(mem_resp);
