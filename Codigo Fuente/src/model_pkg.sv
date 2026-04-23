@@ -59,5 +59,8 @@ package model_pkg;
     `include "bus.sv"
     `include "memory.sv"
     `include "environment.sv"
+    `include "trace_loader.sv"
+    `include "trace_export.sv"
+    `include "event_monitor.sv"
 
 endpackage
