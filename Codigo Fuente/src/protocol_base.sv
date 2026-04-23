@@ -16,7 +16,7 @@
 /**
  * @brief Estado de coherencia de una línea de caché.
  */
-typedef enum {I, S, M} state_e;
+typedef enum {Invalid, Shared, Modified} state_e;
 
 /**
  * @brief Estructura de línea de caché compartida entre Cache y protocolos.
