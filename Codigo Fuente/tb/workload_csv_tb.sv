@@ -115,70 +115,55 @@ module top_tb;
         join
     endtask
 
+    /**
+     * @brief Carga traces desde archivo CSV e inyecta en los cores.
+     *        Lee plusarg +TRACE_FILE; si no existe, usa default.
+     * @param trace_file Ruta del archivo CSV (puede ser vacio para usar default)
+     */
+    task load_traces_from_file(string trace_file);
+        TraceLoader loader;
+        static string default_trace = "../traces/workload_contention.csv";
+
+        // Si no se proporciona archivo, usa default
+        if (trace_file == "") begin
+            trace_file = default_trace;
+        end
+
+        $display("[TopTB] Cargando traces desde: %s", trace_file);
+
+        loader= new(trace_file);
+        loader.load_into_cores(cores);
+    endtask
+
     // TEST
     initial begin
 
-        CoreRequest req;
+        string trace_file;
 
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
 
         $display("========================================");
         $display("   DEMO 2 - SISTEMA MULTICORE COMPLETO");
+        $display("           (Cargando desde traces)");
         $display("========================================");
 
-        // ALTA CONTENCION
-        setup_system();
-
-        $display("\n========== ESCENARIO 1: ALTA CONTENCION ==========");
-
-        foreach (cores[i]) begin
-            req = new(PrRd, 32'h1000, i); cores[i].add_request(req);
-            req = new(PrWr, 32'h1000, i); cores[i].add_request(req);
-            req = new(PrRd, 32'h1000, i); cores[i].add_request(req);
+        // Lee plusarg +TRACE_FILE, si no existe usa string vacío
+        if (!$value$plusargs("TRACE_FILE=%s", trace_file)) begin
+            trace_file = "";
         end
 
-        run_cores();
-        #100;
-
-        // PRODUCTOR - CONSUMIDOR
+        // Ejecuta un único escenario cargando desde archivo
         setup_system();
 
-        $display("\n========== ESCENARIO 2: PRODUCTOR - CONSUMIDOR ==========");
+        load_traces_from_file(trace_file);
 
-        // PRODUCTORES
-        req = new(PrWr, 32'h2000, 0); cores[0].add_request(req);
-        req = new(PrWr, 32'h2000, 1); cores[1].add_request(req);
-
-        // CONSUMIDORES
-        req = new(PrRd, 32'h2000, 2); cores[2].add_request(req);
-        req = new(PrRd, 32'h2000, 3); cores[3].add_request(req);
-
-        // repetición
-        req = new(PrWr, 32'h2000, 0); cores[0].add_request(req);
-        req = new(PrRd, 32'h2000, 2); cores[2].add_request(req);
+        $display("\n========== EJECUTANDO TRACES ==========\n");
 
         run_cores();
         #100;
 
-        // MIGRACION DE OWNERSHIP
-        setup_system();
-
-        $display("\n========== ESCENARIO 3: MIGRACION DE OWNERSHIP ==========");
-
-        req = new(PrWr, 32'h3000, 0); cores[0].add_request(req);
-        req = new(PrWr, 32'h3000, 1); cores[1].add_request(req);
-        req = new(PrWr, 32'h3000, 2); cores[2].add_request(req);
-        req = new(PrWr, 32'h3000, 3); cores[3].add_request(req);
-
-        // repetir
-        req = new(PrWr, 32'h3000, 0); cores[0].add_request(req);
-        req = new(PrWr, 32'h3000, 1); cores[1].add_request(req);
-
-        run_cores();
-        #100;
-
-        $display("\n========== FIN DEMO ==========");
+        $display("\n========== FIN SIMULACION ==========");
         $finish;
 
     end
