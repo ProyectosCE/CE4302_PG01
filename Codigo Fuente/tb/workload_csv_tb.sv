@@ -43,6 +43,10 @@ module workload_csv_tb;
 
     BusReq_mbx bus_mbx;
 
+    // Monitoreo y exportación
+    TraceExporter exporter;
+    EventMonitor monitor;
+
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus/memoria.
@@ -67,6 +71,10 @@ module workload_csv_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
+        if (monitor == null) begin
+            $fatal(1, "[TopTB] EventMonitor no inicializado");
+        end
+
         // CACHES y BUS/MEMORIA en paralelo
         fork
             caches[0].run();
@@ -74,29 +82,8 @@ module workload_csv_tb;
             caches[2].run();
             caches[3].run();
 
-            // BUS + MEMORIA: simula el bus compartido y la memoria principal
-            forever begin
-                BusRequest  bus_req;
-                BusEvent    evt;
-                MemResponse mem_resp;
-
-                bus_mbx.get(bus_req);
-
-                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                bus_evt_mbx[0].put(evt);
-                bus_evt_mbx[1].put(evt);
-                bus_evt_mbx[2].put(evt);
-                bus_evt_mbx[3].put(evt);
-
-                #10.5;
-
-                mem_resp = new(bus_req.address, bus_req.src_core_id);
-                mem_mbx[bus_req.src_core_id].put(mem_resp);
-            end
+            // BUS + MEMORIA + EXPORT: monitoriza el bus, reenvía eventos y responde memoria
+            monitor.monitor_bus(bus_mbx, bus_evt_mbx, mem_mbx);
         join_none
 
         #10;
@@ -131,7 +118,7 @@ module workload_csv_tb;
 
         $display("[TopTB] Cargando traces desde: %s", trace_file);
 
-        loader= new(trace_file);
+        loader = new(trace_file);
         loader.load_into_cores(cores);
     endtask
 
@@ -153,6 +140,10 @@ module workload_csv_tb;
             trace_file = "";
         end
 
+        exporter = new("../sim_results/trace_output.csv");
+        monitor = new();
+        monitor.exporter = exporter;
+
         // Ejecuta un único escenario cargando desde archivo
         setup_system();
 
@@ -162,6 +153,9 @@ module workload_csv_tb;
 
         run_cores();
         #100;
+
+        monitor.print_stats();
+        exporter.close();
 
         $display("\n========== FIN SIMULACION ==========");
         $finish;
