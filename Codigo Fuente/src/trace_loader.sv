@@ -1,7 +1,35 @@
 
+/*
+ * ============================================
+ * ARCHIVO: trace_loader.sv
+ * DESCRIPCIÓN GENERAL:
+ *   Cargador de trazas (memory traces) desde archivo CSV.
+ *   Parsea el formato: cycle,core_id,op,address
+ *   Inyecta solicitudes en la cola de cada core para reproducción.
+ *
+ * ROL EN EL SISTEMA:
+ *   - Intermediario entre archivos de trace y los cores.
+ *   - Permite reproducir workloads determinísticos desde software.
+ *
+ * RELACIÓN CON OTROS MÓDULOS:
+ *   - Complementa Core.trace_queue y Core.add_request().
+ *   - Se utiliza en top_tb antes de run_cores().
+ *
+ * FORMATO DE ARCHIVO:
+ *   CSV con encabezado (ignorado) y líneas de formato:
+ *   cycle,core_id,op,address
+ *   0,0,R,0x00001000
+ *   1,2,W,0x00001000
+ *
+ * VALIDACIONES:
+ *   - core_id en rango 0..3
+ *   - op en {R, W}
+ *   - address válida (hexadecimal 32 bits)
+ * ============================================
+ */
 import types_pkg::*;
 
-virtual class TraceLoader;
+class TraceLoader;
 
     /**
      * @brief Ruta del archivo CSV a cargar.
@@ -18,58 +46,101 @@ virtual class TraceLoader;
 
     /**
      * @brief Carga las solicitudes del archivo CSV en los cores correspondientes.
+     *        Formato esperado: cycle,core_id,op,address
      * @param cores Arreglo de cores a los que se asignarán las solicitudes
      */
-
     task load_into_cores(ref Core cores[]);
         int file, r, line_num;
         string line;
-        string op_str;
+        int cycle;
         int core_id;
+        string op_str;
+        string address_str;
         logic [31:0] address;
         CoreRequest req;
+        int total_reqs = 0;
+        int skipped = 0;
 
         file = $fopen(file_path, "r");
         if (file == 0) begin
-            $fatal(1, "No se pudo abrir el archivo: %s", file_path);
+            $fatal(1, "[TraceLoader] No se puede abrir archivo: %s", file_path);
         end
 
+        $display("[TraceLoader] Cargando traces desde: %s", file_path);
+
+        // Lee encabezado (se ignora)
         line_num = 0;
-        while (!$feof(file)) begin
-            line = "";
-            r = $fgets(line, file);
-            if (r <= 0) continue; // Salta líneas vacías o errores de lectura
+        r = $fgets(line, file);
+        if (r <= 0) begin
+            $fatal(1, "[TraceLoader] Archivo vacío: %s", file_path);
+        end
+        line_num++;
 
+        // Lee líneas de datos
+        while ($fgets(line, file) != 0) begin
             line_num++;
-            // Parsear línea CSV: op,core_id,address
-            r = $sscanf(line, "%s,%d,%h", op_str, core_id, address);
-            if (r != 3) begin
-                $display("Línea %0d inválida (formato incorrecto): %s", line_num, line);
+
+            // Ignora líneas en blanco o con solo espacios
+            if (line.len() == 0 || line == "\n")
+                continue;
+
+            // Parsea línea CSV: cycle,core_id,op,address
+            r = $sscanf(line, "%d,%d,%s,%s", cycle, core_id, op_str, address_str);
+            if (r != 4) begin
+                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 4 campos): %s", line_num, line);
+                skipped++;
                 continue;
             end
 
-            // Validar core_id
+            // Valida core_id
             if (core_id < 0 || core_id >= cores.size()) begin
-                $display("Línea %0d inválida (core_id fuera de rango): %s", line_num, line);
+                $warning("[TraceLoader] Línea %0d: core_id fuera de rango: %0d", line_num, core_id);
+                skipped++;
                 continue;
             end
 
-            // Traducir operación a CoreRequest
-            if (op_str == "R") begin
+            // Traduce operación (R->PrRd, W->PrWr)
+            case (op_str)
+                "R": begin
+                    op_str = "PrRd";
+                end
+                "W": begin
+                    op_str = "PrWr";
+                end
+                default: begin
+                    $warning("[TraceLoader] Línea %0d: operación inválida: %s", line_num, op_str);
+                    skipped++;
+                    continue;
+                end
+            endcase
+
+            // Parsea dirección hexadecimal
+            if ($sscanf(address_str, "%h", address) != 1) begin
+                $warning("[TraceLoader] Línea %0d: dirección inválida: %s", line_num, address_str);
+                skipped++;
+                continue;
+            end
+
+            // Crea CoreRequest y agrega al core
+            if (op_str == "PrRd") begin
                 req = new(PrRd, address, core_id);
-            end else if (op_str == "W") begin
-                req = new(PrWr, address, core_id);
             end else begin
-                $display("Línea %0d inválida (operación desconocida): %s", line_num, line);
-                continue;
+                req = new(PrWr, address, core_id);
             end
 
-            // Agregar solicitud al core correspondiente
             cores[core_id].add_request(req);
+            total_reqs++;
         end
 
         $fclose(file);
-        $display("Carga completa: %0d líneas procesadas", line_num);
+
+        $display("[TraceLoader] Carga completada: %0d solicitudes cargadas, %0d líneas saltadas, %0d líneas totales procesadas",
+            total_reqs, skipped, line_num - 1);
+
+        if (total_reqs == 0) begin
+            $warning("[TraceLoader] Advertencia: no se cargaron solicitudes. Verifica el formato del archivo.");
+        end
+
     endtask
 
 endclass
