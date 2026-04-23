@@ -40,7 +40,12 @@ class TraceLoader;
      * @param path Ruta del archivo CSV
      */
     function new(string path);
-        this.file_path = path;
+        string p;
+        p = path;
+        if (p.len() >= 2 && p.substr(0,0) == "\"" && p.substr(p.len()-1, p.len()-1) == "\"") begin
+            p = p.substr(1, p.len()-2);
+        end
+        this.file_path = p;
     endfunction
 
     /**

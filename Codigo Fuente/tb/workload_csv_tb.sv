@@ -24,7 +24,7 @@
  */
 `timescale 1ns/1ps
 
-module top_tb;
+module workload_csv_tb;
 
     import types_pkg::*;
     import model_pkg::*;

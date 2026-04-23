@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tbDir = Join-Path $root '..\tb'
 $srcDir = Join-Path $root '..\src'
+$tracesDir = Join-Path $root '..\traces'
 $simDir = Join-Path $root '..\sim'
 $runDoPath = Join-Path $root 'run_tb.do'
 
@@ -45,6 +46,7 @@ if (-not [int]::TryParse($selected, [ref]$selectedInt) -or $selectedInt -lt 0 -o
     Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
     exit 1
 }
+
 $tbName = $tbModules[$selectedInt]
 
 
@@ -53,15 +55,49 @@ $tbName = $tbModules[$selectedInt]
 # Usar rutas relativas y comillas dobles en el archivo .do, asegurando que cada línea sea una sola línea
 
 # Compilar primero los packages, luego el resto de los archivos
-$doLines = @(
-    'vlib work',
-    'vlog "../src/types_pkg.sv"',
-    'vlog "../src/model_pkg.sv"',
-    'vlog "../tb/*.sv"',
-    ('vsim ' + $tbName),
-    'run -all',
-    'quit'
-)
+if ($tbName -eq 'workload_csv_tb') {
+    # Menú de workloads CSV
+    $csvFiles = Get-ChildItem -Path $tracesDir -Filter '*.csv' | Select-Object -ExpandProperty Name
+    if (-not $csvFiles) {
+        Write-Host 'No workload CSV files (.csv) found in traces/ folder.' -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host 'Workloads disponibles (traces/):' -ForegroundColor Cyan
+    for ($j = 0; $j -lt $csvFiles.Count; $j++) {
+        Write-Host ("[$j] $($csvFiles[$j])")
+    }
+
+    $selectedCsv = Read-Host 'Ingrese el numero del workload CSV que desea usar'
+    [int]$selectedCsvInt = -1
+    if (-not [int]::TryParse($selectedCsv, [ref]$selectedCsvInt) -or $selectedCsvInt -lt 0 -or $selectedCsvInt -ge $csvFiles.Count) {
+        Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
+        exit 1
+    }
+
+    $csvName = $csvFiles[$selectedCsvInt]
+    $traceRel = "../traces/$csvName"
+
+    $doLines = @(
+        'vlib work',
+        'vlog "../src/types_pkg.sv"',
+        'vlog "../src/model_pkg.sv"',
+        'vlog "../tb/*.sv"',
+        ('vsim ' + $tbName + ' +TRACE_FILE=' + $traceRel),
+        'run -all',
+        'quit'
+    )
+} else {
+    $doLines = @(
+        'vlib work',
+        'vlog "../src/types_pkg.sv"',
+        'vlog "../src/model_pkg.sv"',
+        'vlog "../tb/*.sv"',
+        ('vsim ' + $tbName),
+        'run -all',
+        'quit'
+    )
+}
 $doLines | Set-Content -Encoding ASCII $runDoPath
 
 Write-Host "Archivo temporal run_tb.do generado para $tbName." -ForegroundColor Green
