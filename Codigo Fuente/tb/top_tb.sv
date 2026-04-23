@@ -122,7 +122,7 @@ module top_tb;
      */
     task load_traces_from_file(string trace_file);
         TraceLoader loader;
-        string default_trace = "Demostraciones/#2/traces/workload_contention.csv";
+        static string default_trace = "../traces/workload_contention.csv";
 
         // Si no se proporciona archivo, usa default
         if (trace_file == "") begin
@@ -131,7 +131,7 @@ module top_tb;
 
         $display("[TopTB] Cargando traces desde: %s", trace_file);
 
-        loader = new(trace_file);
+        loader= new(trace_file);
         loader.load_into_cores(cores);
     endtask
 

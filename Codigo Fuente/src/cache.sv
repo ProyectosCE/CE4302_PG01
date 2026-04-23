@@ -143,7 +143,7 @@ class Cache;
 
         foreach (lines[i]) begin
             lines[i].valid = 0;
-            lines[i].state = I;
+            lines[i].state = Invalid;
             lines[i].tag   = 0;
         end
     endfunction

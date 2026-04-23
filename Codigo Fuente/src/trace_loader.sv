@@ -1,4 +1,3 @@
-
 /*
  * ============================================
  * ARCHIVO: trace_loader.sv
@@ -49,13 +48,15 @@ class TraceLoader;
      *        Formato esperado: cycle,core_id,op,address
      * @param cores Arreglo de cores a los que se asignarán las solicitudes
      */
-    task load_into_cores(ref Core cores[]);
+    task load_into_cores(Core cores[]);
         int file, r, line_num;
         string line;
         int cycle;
         int core_id;
+        byte unsigned op_char;
         string op_str;
         string address_str;
+        string address_clean;
         logic [31:0] address;
         CoreRequest req;
         int total_reqs = 0;
@@ -84,8 +85,15 @@ class TraceLoader;
             if (line.len() == 0 || line == "\n")
                 continue;
 
+            // Limpia \r y \n al final de la línea
+            if (line.len() && (line[line.len()-1] == 10 || line[line.len()-1] == 13))
+                line = line.substr(0, line.len()-1);
+            if (line.len() && (line[line.len()-1] == 13))
+                line = line.substr(0, line.len()-1);
+
             // Parsea línea CSV: cycle,core_id,op,address
-            r = $sscanf(line, "%d,%d,%s,%s", cycle, core_id, op_str, address_str);
+            // Nota: usar %c para 'op' evita que %s consuma la coma.
+            r = $sscanf(line, "%d,%d,%c,%s", cycle, core_id, op_char, address_str);
             if (r != 4) begin
                 $warning("[TraceLoader] Línea %0d: formato inválido (esperado 4 campos): %s", line_num, line);
                 skipped++;
@@ -100,22 +108,22 @@ class TraceLoader;
             end
 
             // Traduce operación (R->PrRd, W->PrWr)
-            case (op_str)
-                "R": begin
-                    op_str = "PrRd";
-                end
-                "W": begin
-                    op_str = "PrWr";
-                end
+            case (op_char)
+                "R", "r": op_str = "PrRd";
+                "W", "w": op_str = "PrWr";
                 default: begin
-                    $warning("[TraceLoader] Línea %0d: operación inválida: %s", line_num, op_str);
+                    $warning("[TraceLoader] Línea %0d: operación inválida: %s", line_num, op_char);
                     skipped++;
                     continue;
                 end
             endcase
 
             // Parsea dirección hexadecimal
-            if ($sscanf(address_str, "%h", address) != 1) begin
+            address_clean = address_str;
+            if (address_clean.len() >= 2 && (address_clean.substr(0,1) == "0x" || address_clean.substr(0,1) == "0X")) begin
+                address_clean = address_clean.substr(2, address_clean.len()-1);
+            end
+            if ($sscanf(address_clean, "%h", address) != 1) begin
                 $warning("[TraceLoader] Línea %0d: dirección inválida: %s", line_num, address_str);
                 skipped++;
                 continue;

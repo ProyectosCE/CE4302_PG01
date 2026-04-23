@@ -41,7 +41,7 @@ class ProtocolMSI extends ProtocolBase;
         MemResponse mem_resp;
         bit hit;
 
-        hit = (line.valid && line.tag == tag && line.state != I);
+        hit = (line.valid && line.tag == tag && line.state != Invalid);
 
         // HIT
         if (hit) begin
@@ -54,12 +54,12 @@ class ProtocolMSI extends ProtocolBase;
                     $realtime, cache_id, req.address, line.state);
 
                 // Escritura sobre línea compartida: invalidate por BusRdX
-                if (line.state == S) begin
+                if (line.state == Shared) begin
                     bus_req = new(BusRdX, req.address, cache_id);
                     to_bus.put(bus_req);
                     from_mem.get(mem_resp);
 
-                    line.state = M;
+                    line.state = Modified;
                 end
             end
         end
@@ -76,7 +76,7 @@ class ProtocolMSI extends ProtocolBase;
 
                 line.tag   = tag;
                 line.valid = 1;
-                line.state = S;
+                line.state = Shared;
             end
             else begin // PrWr
                 $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
@@ -88,7 +88,7 @@ class ProtocolMSI extends ProtocolBase;
 
                 line.tag   = tag;
                 line.valid = 1;
-                line.state = M;
+                line.state = Modified;
             end
         end
     endtask
@@ -112,27 +112,27 @@ class ProtocolMSI extends ProtocolBase;
         case (evt.req_type)
             // BusRd
             BusRd: begin
-                if (line.state == M) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRd -> M->S (WB)",
+                if (line.state == Modified) begin
+                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified->Shared (WB)",
                         $realtime, cache_id);
-                    line.state = S;
+                    line.state = Shared;
                 end
             end
 
             // BusRdX
             BusRdX: begin
-                if (line.state == S || line.state == M) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRdX -> -> I",
+                if (line.state == Shared || line.state == Modified) begin
+                    $display("@%0t [Cache %0d] SNOOP BusRdX -> -> Invalid",
                         $realtime, cache_id);
-                    line.state = I;
+                    line.state = Invalid;
                     line.valid = 0;
                 end
             end
 
             // BusUpd (mantener compatibilidad de trazas)
             BusUpd: begin
-                if (line.state == S) begin
-                    $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece S",
+                if (line.state == Shared) begin
+                    $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece Shared",
                         $realtime, cache_id);
                 end
             end
