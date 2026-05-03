@@ -5,7 +5,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tbDir = Join-Path $root '..\tb'
 $srcDir = Join-Path $root '..\src'
 $tracesDir = Join-Path $root '..\traces'
-$simDir = Join-Path $root '..\sim'
+$simDir = Join-Path $root '..\scripts'
 $runDoPath = Join-Path $root 'run_tb.do'
 
 # List all .sv files in tb/ and extract module names
