@@ -13,29 +13,54 @@ import types_pkg::*;
  *   - Preparar el flujo concurrente para fases posteriores.
  *
  * NOTA:
- *   - No implementa arbitraje, broadcast, ni respuestas de memoria.
+ *   - No implementa arbitraje, difusion, ni respuestas de memoria.
  * ============================================
  */
 
 /**
- * @brief Clase Bus base.
- *        Prepara la infraestructura para arbitraje y transacciones futuras.
+ * @brief Modelo de bus de interconexion coherente para un sistema multicore.
+ *
+ * @details
+ *   El Bus es la interconexion central que coordina el trafico de coherencia
+ *   entre caches y memoria principal mediante buzones de mensajes. Acepta solicitudes
+ *   del bus (BusRd, BusRdX, BusUpd), realiza arbitraje RR sobre colas
+ *   por core, difunde un BusEvent a todas las caches y emite una respuesta
+ *   de memoria para lecturas luego de una latencia de transferencia modelada.
+ *
+ *   Flujo general:
+ *     Core -> Cache -> BusReq_mbx -> Bus (RR) -> difusion ->
+ *     respuesta de memoria (para BusRd/BusRdX).
+ *
+ *   Modelo de tiempo:
+ *     latencia = bytes / ancho de banda, medido con $realtime.
+ *
+ *   Supuestos del modelo:
+ *     - Bus compartido bloqueante (una transaccion a la vez).
+ *     - Modelo solo de direcciones (sin datos reales).
+ *     - No hay transferencias cache a cache; la memoria siempre responde.
+ *
+ * @section decisiones_de_diseno Decisiones de diseno
+ *   - Politica RR ofrece equidad y evita inanicion.
+ *   - Colas por core preservan RR sin cambiar interfaces.
+ *   - La respuesta de memoria se modela en el bus como fuente unica de tiempo.
+ *   - Latencia derivada de bytes/ancho de banda evita retrasos fijos arbitrarios.
+ *   - Solo BusRd/BusRdX generan MemResponse (BusUpd es solo coherencia).
  */
 class Bus;
 
-	/** @brief Mailbox compartido de entrada desde caches. */
+	/** @brief Buzon compartido de entrada desde caches. */
 	BusReq_mbx bus_mbx;
 
-	/** @brief Mailboxes de broadcast hacia caches (uno por core). */
+	/** @brief Buzones de difusion hacia caches (uno por core). */
 	BusEvt_mbx bus_evt_mbx[];
 
-	/** @brief Mailboxes de respuesta desde memoria hacia caches (uno por core). */
+	/** @brief Buzones de respuesta desde memoria hacia caches (uno por core). */
 	MemResp_mbx mem_mbx[];
 
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
 
-	/** @brief Puntero de round robin para arbitraje. */
+	/** @brief Puntero RR para equidad y evitar inanicion. */
 	int rr_ptr;
 
 	/** @brief Tamano de linea de cache (bytes). */
@@ -44,56 +69,74 @@ class Bus;
 	/** @brief Tamano de actualizacion en BusUpd (bytes). */
 	localparam int UPDATE_SIZE = 4;
 
-	/** @brief Ancho de banda del bus (bytes/ns). */
+	/** @brief Abstraccion temporal: ancho de banda efectivo en bytes/ns. */
 	real bus_bandwidth_bytes_per_ns;
 
-	/** @brief Colas por core para requests entrantes. */
+	/**
+	 * @brief Colas por core para preservar RR sin alterar el buzon compartido.
+	 *
+	 * @details
+	 *   Permiten arbitraje por core sin introducir una FIFO global que cambie
+	 *   el comportamiento observable de las solicitudes.
+	 */
 	BusRequest req_queues[][$];
 
-	// Metrics: global counters
+	/** @brief Total de solicitudes encoladas observadas por el bus. */
 	int total_requests;
+	/** @brief Total de concesiones emitidas por el planificador. */
 	int total_grants;
+	/** @brief Total de accesos a memoria (solo BusRd/BusRdX). */
 	int total_mem_accesses;
+	/** @brief Total de bytes transferidos en el bus (modelo). */
 	int total_bytes_transferred;
+	/** @brief Invalidaciones inferidas a partir de BusRdX. */
 	int total_invalidations;
+	/** @brief Actualizaciones inferidas a partir de BusUpd. */
 	int total_updates;
 
-	// Monotonic grant identifier
+	/** @brief Identificador monotono de transacciones (concesiones). */
 	int grant_id;
 
-	// Metrics: per-core counters
+	/** @brief Conteo por core de solicitudes encoladas. */
 	int per_core_requests[];
+	/** @brief Conteo por core de concesiones emitidas. */
 	int per_core_grants[];
 
-	// Metrics: per-type counters
+	/** @brief Cantidad de transacciones BusRd concedidas. */
 	int count_BusRd;
+	/** @brief Cantidad de transacciones BusRdX concedidas. */
 	int count_BusRdX;
+	/** @brief Cantidad de transacciones BusUpd concedidas. */
 	int count_BusUpd;
 
-	// Metrics: latency accumulators (ns)
+	/** @brief Suma de tiempos en cola (t_grant - t_enqueue). */
 	real total_queue_wait_time;
+	/** @brief Suma de tiempos de servicio (t_done - t_grant). */
 	real total_service_time;
+	/** @brief Suma de latencias totales (t_done - t_enqueue). */
 	real total_total_latency;
 
-	// Optional: per-type latency accumulators
+	/** @brief Suma de latencia total de BusRd (para promedios). */
 	real latency_BusRd;
+	/** @brief Suma de latencia total de BusRdX (para promedios). */
 	real latency_BusRdX;
+	/** @brief Suma de latencia total de BusUpd (para promedios). */
 	real latency_BusUpd;
 
-	// Simulation time tracking
+	/** @brief Tiempo de inicio de simulacion para normalizar el ancho de banda. */
 	real sim_start_time;
 
 	/**
-	 * @brief Evento de notificacion para el scheduler.
+	 * @brief Evento de notificacion para el planificador.
 	 *        Nota: puede perder pulsos si llegan multiples eventos seguidos.
 	 */
 	event queue_event;
 
 	/**
 	 * @brief Constructor del Bus.
-	 * @param bus_mbx Mailbox compartido de solicitudes desde caches.
-	 * @param bus_evt_mbx Arreglo de mailboxes para broadcast a caches.
-	 * @param mem_mbx Arreglo de mailboxes para respuestas de memoria.
+	 * @param bus_mbx Buzon compartido de solicitudes desde caches.
+	 * @param bus_evt_mbx Arreglo de buzones para difusion a caches.
+	 * @param mem_mbx Arreglo de buzones para respuestas de memoria.
 	 * @param num_cores Numero de cores del sistema.
 	 */
 	function new(
@@ -163,9 +206,9 @@ class Bus;
 
 
 	/**
-	 * @brief Inicia el Bus con dos threads concurrentes:
-	 *        - Collector: recibe solicitudes y las encola por core.
-	 *        - Scheduler: placeholder para futuras fases.
+	 * @brief Inicia el Bus con dos hilos concurrentes:
+	 *        - Recolector: recibe solicitudes y las encola por core.
+	 *        - Planificador: esqueleto para futuras fases.
 	 */
 	task run();
 		sim_start_time = $realtime;
@@ -206,7 +249,7 @@ class Bus;
 
 
 	/**
-	 * @brief Busca el siguiente core con solicitudes pendientes usando round robin.
+	 * @brief Busca el siguiente core con solicitudes pendientes usando RR.
 	 * @return Indice del core con cola no vacia, o -1 si todas estan vacias.
 	 */
 	function int get_next_core_rr();
@@ -224,7 +267,7 @@ class Bus;
 	/**
 	 * @brief Crea un evento de bus a partir de una solicitud.
 	 * @param req Solicitud del bus.
-	 * @return Evento de bus listo para broadcast.
+	 * @return Evento de bus listo para difusion.
 	 */
 	function BusEvent create_bus_event(BusRequest req);
 		BusEvent evt;
@@ -239,7 +282,7 @@ class Bus;
 
 
 	/**
-	 * @brief Broadcast de evento a todas las caches.
+	 * @brief Difusion de evento a todas las caches.
 	 * @param evt Evento a difundir.
 	 */
 	task broadcast_event(BusEvent evt);
@@ -254,8 +297,12 @@ class Bus;
 
 
 	/**
-	 * @brief Thread colector: recibe solicitudes del mailbox compartido
-	 *        y las clasifica por core.
+	 * @brief Hilo recolector: recibe solicitudes y encola por core.
+	 *
+	 * @details
+	 *   Corre en paralelo con el planificador (fork/join_none). Separar la
+	 *   recepcion del arbitraje permite que el bus siga aceptando trafico
+	 *   mientras se ejecuta una transaccion ya concedida.
 	 */
 	task collector_loop();
 		BusRequest req;
@@ -271,13 +318,13 @@ class Bus;
 				continue;
 			end
 
-			req.t_enqueue = $realtime;
+			req.t_enqueue = $realtime; // Referencia para medir tiempo en cola.
 			total_requests++;
 			per_core_requests[core_id]++;
 			req_queues[core_id].push_back(req);
-			// Enqueue timestamp for metrics
+			// Marca de encolado para metricas
 
-			// Nota: logging de debug
+			// Nota: registro de depuracion
 			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
 				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
 
@@ -287,9 +334,13 @@ class Bus;
 
 
 	/**
-	 * @brief Thread scheduler (placeholder). No realiza arbitraje aun.
-	 *        Solo reacciona a nuevas solicitudes sin bloquear la simulacion.
-	 *        Limitacion: @queue_event puede perder eventos si llegan muy seguido.
+	 * @brief Hilo planificador: arbitraje y ejecucion de transacciones.
+	 *
+	 * @details
+	 *   Corre en paralelo con el recolector. Selecciona el siguiente core
+	 *   con politica RR, difunde el evento de coherencia, modela la latencia
+	 *   del bus y emite respuestas de memoria para lecturas. Esta separacion
+	 *   mejora el realismo al mantener un bus bloqueante sin frenar la entrada.
 	 */
 	task scheduler_loop();
 		BusRequest req;
@@ -299,12 +350,13 @@ class Bus;
 		int bytes;
 		real t_grant;
 		real t_done;
-		real latency;
-		real pure_bus_latency;
+			real latency;
+			real pure_bus_latency;
 		real queue_wait;
 		real service_time;
 		real total_latency;
 		forever begin
+			// Seleccion de core segun politica RR sobre colas por core.
 			core_id = get_next_core_rr();
 
 			if (core_id < 0) begin
@@ -316,10 +368,10 @@ class Bus;
 			req = req_queues[core_id].pop_front();
 			t_grant = $realtime;
 			grant_id++;
-			queue_wait = t_grant - req.t_enqueue;
+			queue_wait = t_grant - req.t_enqueue; // Tiempo en cola para esta solicitud.
 			total_grants++;
 			per_core_grants[core_id]++;
-			total_queue_wait_time += queue_wait;
+			total_queue_wait_time += queue_wait; // Acumula espera en cola del bus.
 			case (req.req_type)
 				BusRd:  count_BusRd++;
 				BusRdX: begin
@@ -334,33 +386,36 @@ class Bus;
 			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
 				$realtime, core_id, req.req_type, req.address);
 
-			// Yield para evitar delta-cycle lock
+			// #0 permite avanzar procesos concurrentes en el mismo tiempo simulado.
 			#0;
 
 			evt = create_bus_event(req);
+			// Difusion previa a la latencia para habilitar observacion de coherencia.
 			broadcast_event(evt);
-			// Yield to allow caches to react to broadcast
+			// #0 deja reaccionar a caches en un ciclo delta.
 			#0;
 
 			bytes = get_transaction_size(req);
-			latency = bytes / bus_bandwidth_bytes_per_ns;
+			latency = bytes / bus_bandwidth_bytes_per_ns; // Latencia derivada del modelo.
 			pure_bus_latency = latency;
-			total_bytes_transferred += bytes;
+			total_bytes_transferred += bytes; // Base para metricas de ancho de banda.
 
 			#(latency);
 
+			// Respuesta de memoria solo para lecturas.
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
 				total_mem_accesses++;
 				mem_resp = new(req.address, core_id);
 				mem_mbx[core_id].put(mem_resp);
 			end
 
-			// Yield to allow caches to process the response
+			// #0 permite a las caches procesar la respuesta en un ciclo delta.
 			#0;
 
 			t_done = $realtime;
-			// service_time incluye broadcast, overhead de arbitraje y transferencia
+			// service_time incluye difusion, arbitraje y latencia de transferencia.
 			service_time = t_done - t_grant;
+			// total_latency abarca desde encolado hasta t_done.
 			total_latency = t_done - req.t_enqueue;
 			total_service_time += service_time;
 			total_total_latency += total_latency;
@@ -372,13 +427,30 @@ class Bus;
 			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
 				$t_done, core_id, req.req_type, req.address, latency, bytes);
 
-			rr_ptr = (core_id + 1) % num_cores;
+			rr_ptr = (core_id + 1) % num_cores; // Avanza RR para equidad.
 		end
 	endtask
 
 
 	/**
-	 * @brief Imprime los metrics acumulados del bus.
+	 * @brief Imprime metricas acumuladas y promedios derivados del bus.
+	 *
+	 * @details
+	 *   Definiciones:
+	 *     queue_wait    = tiempo en cola (t_grant - t_enqueue)
+	 *     service_time  = tiempo de servicio (t_done - t_grant)
+	 *     total_latency = latencia total (t_done - t_enqueue)
+	 *
+	 *   Ancho de banda:
+	 *     total_bytes / tiempo_total (desde sim_start_time hasta $realtime)
+	 *
+	 *   Interpretacion:
+	 *     BusRd  -> lecturas compartidas
+	 *     BusRdX -> invalidaciones (escritura con invalidacion)
+	 *     BusUpd -> actualizaciones (escritura con actualizacion)
+	 *
+	 *   Nota: invalidaciones y actualizaciones se infieren a partir del tipo de solicitud;
+	 *   no se observan efectos por cache de forma directa.
 	 */
 	function void print_metrics();
 		real avg_queue_wait;
