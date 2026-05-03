@@ -186,6 +186,7 @@ class Bus;
 			end
 
 			req_queues[core_id].push_back(req);
+			// TODO Phase 5: capture enqueue timestamp for latency metrics
 
 			// Nota: logging de debug
 			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
@@ -212,21 +213,23 @@ class Bus;
 		forever begin
 			if (!has_pending_requests()) begin
 				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
-				wait (has_pending_requests());
+				@queue_event;
+				continue;
 			end
-
-			$display("@%0t [BUS] Scheduler evaluating queues", $realtime);
 			core_id = get_next_core_rr();
 
 			if (core_id < 0) begin
 				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
-				wait (has_pending_requests());
+				@queue_event;
 				continue;
 			end
 
 			req = req_queues[core_id].pop_front();
 			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
 				$realtime, core_id, req.req_type, req.address);
+
+			// Yield para evitar delta-cycle lock
+			#0;
 
 			t_grant = $realtime;
 			bytes = get_transaction_size(req);
