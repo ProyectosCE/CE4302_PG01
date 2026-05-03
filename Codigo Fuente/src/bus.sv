@@ -55,6 +55,11 @@ class Bus;
 	int total_grants;
 	int total_mem_accesses;
 	int total_bytes_transferred;
+	int total_invalidations;
+	int total_updates;
+
+	// Monotonic grant identifier
+	int grant_id;
 
 	// Metrics: per-core counters
 	int per_core_requests[];
@@ -104,12 +109,13 @@ class Bus;
 		this.num_cores = num_cores;
 		this.rr_ptr = 0;
 		this.bus_bandwidth_bytes_per_ns = 4.0;
-		this.sim_start_time = $realtime;
-
 		this.total_requests = 0;
 		this.total_grants = 0;
 		this.total_mem_accesses = 0;
 		this.total_bytes_transferred = 0;
+		this.total_invalidations = 0;
+		this.total_updates = 0;
+		this.grant_id = 0;
 		this.count_BusRd = 0;
 		this.count_BusRdX = 0;
 		this.count_BusUpd = 0;
@@ -162,6 +168,7 @@ class Bus;
 	 *        - Scheduler: placeholder para futuras fases.
 	 */
 	task run();
+		sim_start_time = $realtime;
 		fork
 			collector_loop();
 			scheduler_loop();
@@ -293,6 +300,7 @@ class Bus;
 		real t_grant;
 		real t_done;
 		real latency;
+		real pure_bus_latency;
 		real queue_wait;
 		real service_time;
 		real total_latency;
@@ -307,14 +315,21 @@ class Bus;
 
 			req = req_queues[core_id].pop_front();
 			t_grant = $realtime;
+			grant_id++;
 			queue_wait = t_grant - req.t_enqueue;
 			total_grants++;
 			per_core_grants[core_id]++;
 			total_queue_wait_time += queue_wait;
 			case (req.req_type)
 				BusRd:  count_BusRd++;
-				BusRdX: count_BusRdX++;
-				BusUpd: count_BusUpd++;
+				BusRdX: begin
+					count_BusRdX++;
+					total_invalidations++;
+				end
+				BusUpd: begin
+					count_BusUpd++;
+					total_updates++;
+				end
 			endcase
 			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
 				$realtime, core_id, req.req_type, req.address);
@@ -329,6 +344,7 @@ class Bus;
 
 			bytes = get_transaction_size(req);
 			latency = bytes / bus_bandwidth_bytes_per_ns;
+			pure_bus_latency = latency;
 			total_bytes_transferred += bytes;
 
 			#(latency);
@@ -343,6 +359,7 @@ class Bus;
 			#0;
 
 			t_done = $realtime;
+			// service_time incluye broadcast, overhead de arbitraje y transferencia
 			service_time = t_done - t_grant;
 			total_latency = t_done - req.t_enqueue;
 			total_service_time += service_time;
@@ -387,6 +404,10 @@ class Bus;
 		$display("===== BUS METRICS =====");
 		$display("total_requests=%0d total_grants=%0d total_mem_accesses=%0d total_bytes=%0d",
 			total_requests, total_grants, total_mem_accesses, total_bytes_transferred);
+		if (total_requests != total_grants)
+			$display("[WARN] requests != grants");
+		$display("total_invalidations=%0d total_updates=%0d grant_id=%0d",
+			total_invalidations, total_updates, grant_id);
 		$display("per_core stats:");
 		for (int i = 0; i < num_cores; i++) begin
 			$display("  core%0d req=%0d grant=%0d", i, per_core_requests[i], per_core_grants[i]);
