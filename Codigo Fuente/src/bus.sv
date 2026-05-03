@@ -35,6 +35,9 @@ class Bus;
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
 
+	/** @brief Puntero de round robin para arbitraje. */
+	int rr_ptr;
+
 	/** @brief Colas por core para requests entrantes. */
 	BusRequest req_queues[][$];
 
@@ -62,6 +65,7 @@ class Bus;
 
 		this.bus_mbx = bus_mbx;
 		this.num_cores = num_cores;
+		this.rr_ptr = 0;
 
 		if (this.bus_mbx == null) begin
 			$fatal(1, "[Bus] bus_mbx no inicializado");
@@ -123,6 +127,22 @@ class Bus;
 
 
 	/**
+	 * @brief Busca el siguiente core con solicitudes pendientes usando round robin.
+	 * @return Indice del core con cola no vacia, o -1 si todas estan vacias.
+	 */
+	function int get_next_core_rr();
+		for (int i = 0; i < num_cores; i++) begin
+			int idx;
+			idx = (rr_ptr + i) % num_cores;
+			if (req_queues[idx].size() > 0) begin
+				return idx;
+			end
+		end
+		return -1;
+	endfunction
+
+
+	/**
 	 * @brief Thread colector: recibe solicitudes del mailbox compartido
 	 *        y las clasifica por core.
 	 */
@@ -157,12 +177,28 @@ class Bus;
 	 *        Limitacion: @queue_event puede perder eventos si llegan muy seguido.
 	 */
 	task scheduler_loop();
+		BusRequest req;
+		int core_id;
 		forever begin
-			@queue_event;
 			if (!has_pending_requests()) begin
-				// Chequeo defensivo: sin accion en Fase 1 para no cambiar comportamiento.
+				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
+				@queue_event;
 			end
-			$display("@%0t [BUS] Scheduler despierto (fase 1)", $realtime);
+
+			$display("@%0t [BUS] Scheduler evaluating queues", $realtime);
+			core_id = get_next_core_rr();
+
+			if (core_id < 0) begin
+				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
+				@queue_event;
+				continue;
+			end
+
+			req = req_queues[core_id].pop_front();
+			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
+				$realtime, core_id, req.req_type, req.address);
+
+			rr_ptr = (core_id + 1) % num_cores;
 		end
 	endtask
 
