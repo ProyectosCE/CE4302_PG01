@@ -38,7 +38,10 @@ class Bus;
 	/** @brief Colas por core para requests entrantes. */
 	BusRequest req_queues[][$];
 
-	/** @brief Evento de notificacion para el scheduler. */
+	/**
+	 * @brief Evento de notificacion para el scheduler.
+	 *        Nota: puede perder pulsos si llegan multiples eventos seguidos.
+	 */
 	event queue_event;
 
 	/**
@@ -85,6 +88,10 @@ class Bus;
 			this.bus_evt_mbx[i] = bus_evt_mbx[i];
 			this.mem_mbx[i] = mem_mbx[i];
 		end
+
+		for (int i = 0; i < this.num_cores; i++) begin
+			this.req_queues[i] = {};
+		end
 	endfunction
 
 
@@ -99,6 +106,20 @@ class Bus;
 			scheduler_loop();
 		join_none
 	endtask
+
+
+	/**
+	 * @brief Indica si existe al menos una solicitud pendiente en cualquier cola.
+	 * @return 1 si hay elementos, 0 si todas las colas estan vacias.
+	 */
+	function bit has_pending_requests();
+		for (int i = 0; i < num_cores; i++) begin
+			if (req_queues[i].size() > 0) begin
+				return 1;
+			end
+		end
+		return 0;
+	endfunction
 
 
 	/**
@@ -121,6 +142,7 @@ class Bus;
 
 			req_queues[core_id].push_back(req);
 
+			// Nota: logging de debug
 			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
 				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
 
@@ -132,10 +154,14 @@ class Bus;
 	/**
 	 * @brief Thread scheduler (placeholder). No realiza arbitraje aun.
 	 *        Solo reacciona a nuevas solicitudes sin bloquear la simulacion.
+	 *        Limitacion: @queue_event puede perder eventos si llegan muy seguido.
 	 */
 	task scheduler_loop();
 		forever begin
 			@queue_event;
+			if (!has_pending_requests()) begin
+				// Chequeo defensivo: sin accion en Fase 1 para no cambiar comportamiento.
+			end
 			$display("@%0t [BUS] Scheduler despierto (fase 1)", $realtime);
 		end
 	endtask
