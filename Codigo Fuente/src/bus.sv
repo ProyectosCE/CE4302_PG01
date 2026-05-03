@@ -424,8 +424,9 @@ class Bus;
 				BusRdX: latency_BusRdX += total_latency;
 				BusUpd: latency_BusUpd += total_latency;
 			endcase
+			// Usa t_done local para reportar el tiempo de fin de la transaccion.
 			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
-				$t_done, core_id, req.req_type, req.address, latency, bytes);
+				t_done, core_id, req.req_type, req.address, latency, bytes);
 
 			rr_ptr = (core_id + 1) % num_cores; // Avanza RR para equidad.
 		end

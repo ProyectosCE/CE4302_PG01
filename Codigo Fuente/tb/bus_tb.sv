@@ -180,8 +180,7 @@ module bus_tb;
 	// Monitores pasivos de eventos y respuestas.
 	initial begin
 		for (int i = 0; i < NUM_CORES; i++) begin
-			int cid;
-			cid = i;
+			automatic int cid = i; // Evita que el fork reuse el mismo indice.
 			fork
 				monitor_events(cid);
 				monitor_mem_resps(cid);
@@ -201,6 +200,8 @@ module bus_tb;
 		int active_cores;
 		int max_grants;
 		int min_grants;
+		int max_sent;
+		int min_sent;
 		real avg_rd;
 		real avg_rdx;
 		real avg_upd;
@@ -283,18 +284,25 @@ module bus_tb;
 				$display("[WARNING] Posible inanicion para core %0d", c);
 		end
 
-		// Verificacion de equidad: RR deberia distribuir concesiones en el tiempo.
+		// Verificacion de equidad: solo aplica si la carga por core es comparable.
 		max_grants = -1;
 		min_grants = 32'h7fffffff;
+		max_sent = -1;
+		min_sent = 32'h7fffffff;
 		for (int c = 0; c < NUM_CORES; c++) begin
 			if (sent_count[c] > 0) begin
 				if (bus.per_core_grants[c] > max_grants)
 					max_grants = bus.per_core_grants[c];
 				if (bus.per_core_grants[c] < min_grants)
 					min_grants = bus.per_core_grants[c];
+				if (sent_count[c] > max_sent)
+					max_sent = sent_count[c];
+				if (sent_count[c] < min_sent)
+					min_sent = sent_count[c];
 			end
 		end
-		if (active_cores > 1 && max_grants >= 0 && (max_grants - min_grants) > rr_imbalance_threshold)
+		if (active_cores > 1 && max_grants >= 0 && (max_sent - min_sent) <= rr_imbalance_threshold &&
+			(max_grants - min_grants) > rr_imbalance_threshold)
 			$display("[WARNING] Desbalance en arbitraje RR: max=%0d min=%0d",
 				max_grants, min_grants);
 
@@ -330,20 +338,39 @@ module bus_tb;
 				$display("[INFO] Latencias relativas dependen del modelo de tiempo (tamano y BW)");
 		end
 
+		// Dominancia: solo se reporta si otros cores aun tienen solicitudes pendientes.
 		if (grant_order.size() > 0) begin
+			int pending[NUM_CORES];
+			for (int c = 0; c < NUM_CORES; c++) begin
+				pending[c] = sent_count[c];
+			end
 			streak = 1;
 			last = grant_order[0];
-			for (int k = 1; k < grant_order.size(); k++) begin
-				if (grant_order[k] == last) begin
-					streak++;
-					if (streak > starvation_limit) begin
-						$display("[WARNING] Posible dominancia: core=%0d repite %0d veces", last, streak);
-						streak = 1;
+			for (int k = 0; k < grant_order.size(); k++) begin
+				int current;
+				bit others_pending;
+				current = grant_order[k];
+				others_pending = 0;
+				for (int c = 0; c < NUM_CORES; c++) begin
+					if (c != current && pending[c] > 0) begin
+						others_pending = 1;
+						break;
 					end
-				end else begin
-					streak = 1;
-					last = grant_order[k];
 				end
+				if (k > 0) begin
+					if (current == last) begin
+						streak++;
+						if (others_pending && streak > starvation_limit) begin
+							$display("[WARNING] Posible dominancia: core=%0d repite %0d veces", current, streak);
+							streak = 1;
+						end
+					end else begin
+						streak = 1;
+						last = current;
+					end
+				end
+				if (pending[current] > 0)
+					pending[current]--;
 			end
 		end
 
