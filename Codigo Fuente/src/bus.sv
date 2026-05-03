@@ -168,6 +168,36 @@ class Bus;
 
 
 	/**
+	 * @brief Crea un evento de bus a partir de una solicitud.
+	 * @param req Solicitud del bus.
+	 * @return Evento de bus listo para broadcast.
+	 */
+	function BusEvent create_bus_event(BusRequest req);
+		BusEvent evt;
+		case (req.req_type)
+			BusRd:  evt = new(BusRd, req.address, req.src_core_id);
+			BusRdX: evt = new(BusRdX, req.address, req.src_core_id);
+			BusUpd: evt = new(BusUpd, req.address, req.src_core_id);
+			default: evt = new(req.req_type, req.address, req.src_core_id);
+		endcase
+		return evt;
+	endfunction
+
+
+	/**
+	 * @brief Broadcast de evento a todas las caches.
+	 * @param evt Evento a difundir.
+	 */
+	task broadcast_event(BusEvent evt);
+		for (int i = 0; i < num_cores; i++) begin
+			bus_evt_mbx[i].put(evt);
+		end
+		$display("@%0t [BUS] BROADCAST type=%0d addr=%h src=%0d",
+			$realtime, evt.req_type, evt.address, evt.src_core_id);
+	endtask
+
+
+	/**
 	 * @brief Thread colector: recibe solicitudes del mailbox compartido
 	 *        y las clasifica por core.
 	 */
@@ -204,6 +234,7 @@ class Bus;
 	 */
 	task scheduler_loop();
 		BusRequest req;
+		BusEvent evt;
 		MemResponse mem_resp;
 		int core_id;
 		int bytes;
@@ -230,6 +261,9 @@ class Bus;
 
 			// Yield para evitar delta-cycle lock
 			#0;
+
+			evt = create_bus_event(req);
+			broadcast_event(evt);
 
 			t_grant = $realtime;
 			bytes = get_transaction_size(req);
