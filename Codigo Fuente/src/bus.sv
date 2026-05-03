@@ -38,6 +38,15 @@ class Bus;
 	/** @brief Puntero de round robin para arbitraje. */
 	int rr_ptr;
 
+	/** @brief Tamano de linea de cache (bytes). */
+	localparam int LINE_SIZE = 32;
+
+	/** @brief Tamano de actualizacion en BusUpd (bytes). */
+	localparam int UPDATE_SIZE = 4;
+
+	/** @brief Ancho de banda del bus (bytes/ns). */
+	real bus_bandwidth_bytes_per_ns;
+
 	/** @brief Colas por core para requests entrantes. */
 	BusRequest req_queues[][$];
 
@@ -66,6 +75,7 @@ class Bus;
 		this.bus_mbx = bus_mbx;
 		this.num_cores = num_cores;
 		this.rr_ptr = 0;
+		this.bus_bandwidth_bytes_per_ns = 4.0;
 
 		if (this.bus_mbx == null) begin
 			$fatal(1, "[Bus] bus_mbx no inicializado");
@@ -127,6 +137,21 @@ class Bus;
 
 
 	/**
+	 * @brief Devuelve el tamano de la transaccion (bytes) segun el tipo.
+	 * @param req Solicitud del bus.
+	 * @return Tamano en bytes.
+	 */
+	function int get_transaction_size(BusRequest req);
+		case (req.req_type)
+			BusRd:  return LINE_SIZE;
+			BusRdX: return LINE_SIZE;
+			BusUpd: return UPDATE_SIZE;
+			default: return LINE_SIZE;
+		endcase
+	endfunction
+
+
+	/**
 	 * @brief Busca el siguiente core con solicitudes pendientes usando round robin.
 	 * @return Indice del core con cola no vacia, o -1 si todas estan vacias.
 	 */
@@ -178,12 +203,16 @@ class Bus;
 	 */
 	task scheduler_loop();
 		BusRequest req;
+		MemResponse mem_resp;
 		int core_id;
+		int bytes;
+		real t_grant;
+		real t_done;
+		real latency;
 		forever begin
 			if (!has_pending_requests()) begin
 				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
-				@queue_event;
-				continue;
+				wait (has_pending_requests());
 			end
 
 			$display("@%0t [BUS] Scheduler evaluating queues", $realtime);
@@ -191,7 +220,7 @@ class Bus;
 
 			if (core_id < 0) begin
 				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
-				@queue_event;
+				wait (has_pending_requests());
 				continue;
 			end
 
@@ -199,10 +228,22 @@ class Bus;
 			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
 				$realtime, core_id, req.req_type, req.address);
 
-			rr_ptr = (core_id + 1) % num_cores;
+			t_grant = $realtime;
+			bytes = get_transaction_size(req);
+			latency = bytes / bus_bandwidth_bytes_per_ns;
 
-			// Yield obligatorio para evitar bucles infinitos en delta cycles.
-			#0;
+			#(latency);
+
+			if (req.req_type == BusRd || req.req_type == BusRdX) begin
+				mem_resp = new(req.address, core_id);
+				mem_mbx[core_id].put(mem_resp);
+			end
+
+			t_done = $realtime;
+			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
+				$t_done, core_id, req.req_type, req.address, latency, bytes);
+
+			rr_ptr = (core_id + 1) % num_cores;
 		end
 	endtask
 
