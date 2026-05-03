@@ -473,7 +473,7 @@ class Bus;
 		total_time = $realtime - sim_start_time;
 		bandwidth = (total_time > 0.0) ? (total_bytes_transferred / total_time) : 0.0;
 
-		$display("===== BUS METRICS =====");
+		$display(" BUS METRICS");
 		$display("total_requests=%0d total_grants=%0d total_mem_accesses=%0d total_bytes=%0d",
 			total_requests, total_grants, total_mem_accesses, total_bytes_transferred);
 		if (total_requests != total_grants)
