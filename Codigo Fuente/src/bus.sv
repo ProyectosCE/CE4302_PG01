@@ -183,6 +183,7 @@ class Bus;
 			if (!has_pending_requests()) begin
 				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
 				@queue_event;
+				continue;
 			end
 
 			$display("@%0t [BUS] Scheduler evaluating queues", $realtime);
@@ -199,6 +200,9 @@ class Bus;
 				$realtime, core_id, req.req_type, req.address);
 
 			rr_ptr = (core_id + 1) % num_cores;
+
+			// Yield obligatorio para evitar bucles infinitos en delta cycles.
+			#0;
 		end
 	endtask
 
