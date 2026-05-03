@@ -190,7 +190,9 @@ class Bus;
 	 */
 	task broadcast_event(BusEvent evt);
 		for (int i = 0; i < num_cores; i++) begin
-			bus_evt_mbx[i].put(evt);
+			BusEvent evt_copy;
+			evt_copy = new(evt.req_type, evt.address, evt.src_core_id);
+			bus_evt_mbx[i].put(evt_copy);
 		end
 		$display("@%0t [BUS] BROADCAST type=%0d addr=%h src=%0d",
 			$realtime, evt.req_type, evt.address, evt.src_core_id);
@@ -215,8 +217,9 @@ class Bus;
 				continue;
 			end
 
+			req.t_enqueue = $realtime;
 			req_queues[core_id].push_back(req);
-			// TODO Phase 5: capture enqueue timestamp for latency metrics
+			// Enqueue timestamp for metrics
 
 			// Nota: logging de debug
 			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
@@ -242,11 +245,6 @@ class Bus;
 		real t_done;
 		real latency;
 		forever begin
-			if (!has_pending_requests()) begin
-				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
-				@queue_event;
-				continue;
-			end
 			core_id = get_next_core_rr();
 
 			if (core_id < 0) begin
@@ -256,6 +254,7 @@ class Bus;
 			end
 
 			req = req_queues[core_id].pop_front();
+			t_grant = $realtime;
 			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
 				$realtime, core_id, req.req_type, req.address);
 
@@ -264,8 +263,9 @@ class Bus;
 
 			evt = create_bus_event(req);
 			broadcast_event(evt);
+			// Yield to allow caches to react to broadcast
+			#0;
 
-			t_grant = $realtime;
 			bytes = get_transaction_size(req);
 			latency = bytes / bus_bandwidth_bytes_per_ns;
 
@@ -275,6 +275,9 @@ class Bus;
 				mem_resp = new(req.address, core_id);
 				mem_mbx[core_id].put(mem_resp);
 			end
+
+			// Yield to allow caches to process the response
+			#0;
 
 			t_done = $realtime;
 			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
