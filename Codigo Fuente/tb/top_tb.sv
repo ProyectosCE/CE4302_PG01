@@ -35,6 +35,7 @@ module top_tb;
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
+    Bus   bus;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -45,7 +46,7 @@ module top_tb;
 
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
-     *        Lanza en paralelo la ejecución de caches y el bus/memoria.
+     *        Lanza en paralelo la ejecución de caches y el bus real.
      */
     task setup_system();
 
@@ -67,37 +68,19 @@ module top_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
-        // CACHES y BUS/MEMORIA en paralelo
+        // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
+        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
+
+        // CACHES en paralelo
         fork
             caches[0].run();
             caches[1].run();
             caches[2].run();
             caches[3].run();
-
-            // BUS + MEMORIA: simula el bus compartido y la memoria principal
-            forever begin
-                BusRequest  bus_req;
-                BusEvent    evt;
-                MemResponse mem_resp;
-
-                bus_mbx.get(bus_req);
-
-                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                bus_evt_mbx[0].put(evt);
-                bus_evt_mbx[1].put(evt);
-                bus_evt_mbx[2].put(evt);
-                bus_evt_mbx[3].put(evt);
-
-                #10.5;
-
-                mem_resp = new(bus_req.address, bus_req.src_core_id);
-                mem_mbx[bus_req.src_core_id].put(mem_resp);
-            end
         join_none
+
+        // BUS REAL en ejecución concurrente.
+        bus.run();
 
         #10;
 

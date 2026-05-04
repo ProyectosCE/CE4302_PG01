@@ -115,6 +115,10 @@ package types_pkg;
          * @brief Identificador del core origen
          */
         int src_core_id;
+        /**
+         * @brief Timestamp de encolado (metricas)
+         */
+        real t_enqueue;
 
         /**
          * @brief Constructor de BusRequest
