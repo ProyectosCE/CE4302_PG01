@@ -37,12 +37,7 @@ class ProtocolFirefly extends ProtocolBase;
 
     /** @brief Devuelve un nombre legible para el tipo de evento de bus. */
     function string evt_name(bus_req_type_e req_type);
-        case (req_type)
-            BusRd:  return "BusRd";
-            BusRdX: return "BusRdX";
-            BusUpd: return "BusUpd";
-            default: return "Unknown";
-        endcase
+        return bus_req_name(req_type);
     endfunction
 
     /**
@@ -127,22 +122,22 @@ class ProtocolFirefly extends ProtocolBase;
 
         // Ignora eventos anteriores al llenado de la línea (causalidad).
         if (evt.t_broadcast < line.last_fill_time) begin
-            $display("@%0t [Cache %0d] IGNORE stale evt type=%s addr=%h t_evt=%0t fill=%0t state=%s",
+            $display("[%0t] [CACHE] [Core %0d] SNOOP_IGNORE stale type=%s addr=%s t_evt=%0t fill=%0t state=%s",
                 $realtime,
                 cache_id,
                 evt_name(evt.req_type),
-                evt.address,
+                fmt_addr(evt.address),
                 time'(evt.t_broadcast),
                 time'(line.last_fill_time),
                 state_name(line.state));
             return;
         end
 
-        $display("@%0t [Cache %0d] APPLY evt type=%s addr=%h state_before=%s from core=%0d",
+        $display("[%0t] [CACHE] [Core %0d] SNOOP_APPLY type=%s addr=%s state_before=%s from_core=%0d",
             $realtime,
             cache_id,
             evt_name(evt.req_type),
-            evt.address,
+            fmt_addr(evt.address),
             state_name(line.state),
             evt.src_core_id);
 
@@ -169,20 +164,20 @@ class ProtocolFirefly extends ProtocolBase;
                     line.state = Shared;
                 end
                 if (line.state == Shared) begin
-                    $display("@%0t [Cache %0d] SNOOP BusUpd addr=%h state=S",
-                        $realtime, cache_id, evt.address);
+                    $display("[%0t] [CACHE] [Core %0d] SNOOP_UPD addr=%s state=S",
+                        $realtime, cache_id, fmt_addr(evt.address));
                 end
             end
         endcase
 
         new_state = line.state;
         if (new_state != old_state) begin
-            $display("@%0t [Cache %0d] SNOOP TRANSITION: %s -> %s addr=%h due_to=%s from core=%0d",
+            $display("[%0t] [CACHE] [Core %0d] SNOOP_TRANSITION %s->%s addr=%s cause=%s from_core=%0d",
                 $realtime,
                 cache_id,
                 state_name(old_state),
                 state_name(new_state),
-                evt.address,
+                fmt_addr(evt.address),
                 evt_name(evt.req_type),
                 evt.src_core_id);
         end

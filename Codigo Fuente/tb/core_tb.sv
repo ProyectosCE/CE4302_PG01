@@ -37,9 +37,7 @@ module core_tb;
         // Formato de impresión temporal en ns para trazas más legibles.
         $timeformat(-9, 3, " ns", 10);
 
-        $display("=================================");
-        $display(" TEST CORE (TRACE PLAYER)");
-        $display("=================================");
+        $display("[%0t] [TB] START TEST core_trace_player", $realtime);
 
         // mailbox para comunicación core-cache
         core_to_cache_mbx = new();
@@ -66,10 +64,10 @@ module core_tb;
                 CoreResponse resp;
                 core_to_cache_mbx.get(rcv);
 
-                $display("@%0t [DUMMY CACHE] Recibido %s addr=%h core=%0d",
+                $display("[%0t] [TB] DUMMY_CACHE rx type=%s addr=%s core=%0d",
                     $realtime,
-                    (rcv.req_type == PrRd) ? "PrRd" : "PrWr",
-                    rcv.address,
+                    core_req_name(rcv.req_type),
+                    fmt_addr(rcv.address),
                     rcv.src_core_id);
 
                 // Respuesta inmediata para desbloquear el core.

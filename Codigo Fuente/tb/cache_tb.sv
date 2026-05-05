@@ -52,9 +52,7 @@ module cache_tb;
         // Formato de impresión temporal en ns para trazas coherentes en consola.
         $timeformat(-9, 3, " ns", 10);
 
-        $display("========================================");
-        $display(" TEST CACHE (MSI + FIREFLY COMPLETO)");
-        $display("========================================");
+        $display("[%0t] [TB] START TEST cache MSI+FIREFLY", $realtime);
 
         // Crear mailboxes para comunicación
         foreach (core_mbx[i]) core_mbx[i] = new();
@@ -106,8 +104,9 @@ module cache_tb;
             forever begin
                 bus_mbx.get(bus_req);
 
-                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
+                $display("[%0t] [TB] BUS_DUMMY type=%s addr=%s core=%0d",
+                    $realtime, bus_req_name(bus_req.req_type), fmt_addr(bus_req.address),
+                    bus_req.src_core_id);
 
                 // broadcast a TODOS
                 evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
@@ -128,7 +127,7 @@ module cache_tb;
         #10;
 
         // MSI TEST (cache0 y cache1)
-        $display("\nMSI TEST");
+        $display("[%0t] [TB] TEST start name=MSI", $realtime);
 
         // I -> S
         req = new(PrRd, 32'h1000, 0); core_mbx[0].put(req); #20;
@@ -149,7 +148,7 @@ module cache_tb;
         req = new(PrWr, 32'h1000, 1); core_mbx[1].put(req); #40;
 
         // FIREFLY TEST (cache2 y cache3)
-        $display("\nFIREFLY TEST");
+        $display("[%0t] [TB] TEST start name=FIREFLY", $realtime);
 
         // I -> S
         req = new(PrRd, 32'h2000, 2); core_mbx[2].put(req); #20;
@@ -165,7 +164,7 @@ module cache_tb;
         // otro update
         req = new(PrWr, 32'h2000, 2); core_mbx[2].put(req); #40;
 
-        $display("\nFIN TEST COMPLETO");
+        $display("[%0t] [TB] DONE cache_test", $realtime);
         #50;
         $finish;
     end

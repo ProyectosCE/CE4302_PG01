@@ -62,19 +62,19 @@ module memory_tb;
 
         wait_for_response(core_id, ready);
         if (!ready) begin
-            $error("[TB] FAIL %s: timeout waiting for response", label);
+            $error("[%0t] [TB] FAIL %s timeout waiting for response", $realtime, label);
         end else begin
             mem_mbx[core_id].get(resp);
             t_end = $time;
             delta = t_end - t_start;
             if (delta < MEM_LATENCY_CYCLES) begin
-                $error("[TB] FAIL %s: latency too small (%0t ns)", label, delta);
+                $error("[%0t] [TB] FAIL %s latency too small (%0t ns)", $realtime, label, delta);
             end
             if (resp.address != addr || resp.dest_core_id != core_id) begin
-            $error("[TB] FAIL %s: wrong response addr=%h dest=%0d",
-                label, resp.address, resp.dest_core_id);
+            $error("[%0t] [TB] FAIL %s wrong response addr=%s dest=%0d",
+                $realtime, label, fmt_addr(resp.address), resp.dest_core_id);
             end else begin
-                $display("@%0t [TB] PASS %s", $realtime, label);
+                $display("[%0t] [TB] PASS %s", $realtime, label);
             end
         end
     endtask
@@ -88,12 +88,13 @@ module memory_tb;
         for (int i = 0; i < NUM_CORES; i++) begin
             if (mem_mbx[i].num() != 0) begin
                 ok = 0;
-                $error("[TB] FAIL %s: unexpected response in core %0d mailbox", label, i);
+                $error("[%0t] [TB] FAIL %s unexpected response in core %0d mailbox",
+                    $realtime, label, i);
             end
         end
 
         if (ok) begin
-            $display("@%0t [TB] PASS %s", $realtime, label);
+            $display("[%0t] [TB] PASS %s", $realtime, label);
         end
     endtask
 
@@ -124,7 +125,7 @@ module memory_tb;
 
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST MEMORY (PHASE 5)");
+        $display("[%0t] [TB] START TEST memory phase=5", $realtime);
 
         bus_mbx = new();
         for (int i = 0; i < NUM_CORES; i++) begin
@@ -145,19 +146,19 @@ module memory_tb;
         #1;
 
         // Test 1: basic routing (core 0)
-        $display("@%0t [TB] TEST 1: basic routing", $realtime);
+        $display("[%0t] [TB] TEST start id=1 name=basic_routing", $realtime);
         drain_mailboxes();
         t_start_core0 = $time;
         send_req(BusRd, 32'h0000_1000, 0);
         expect_response(0, 32'h0000_1000, t_start_core0, "BusRd core0");
         for (int i = 1; i < NUM_CORES; i++) begin
             if (mem_mbx[i].num() != 0) begin
-                $error("[TB] FAIL basic routing: unexpected response in core %0d", i);
+                $error("[%0t] [TB] FAIL basic_routing unexpected response core=%0d", $realtime, i);
             end
         end
 
         // Test 2: multiple cores
-        $display("@%0t [TB] TEST 2: multiple cores", $realtime);
+        $display("[%0t] [TB] TEST start id=2 name=multiple_cores", $realtime);
         drain_mailboxes();
         t_start_core1 = $time;
         send_req(BusRdX, 32'h0000_2000, 1);
@@ -166,17 +167,17 @@ module memory_tb;
         expect_response(1, 32'h0000_2000, t_start_core1, "BusRdX core1");
         expect_response(3, 32'h0000_3000, t_start_core3, "BusRd core3");
         if (mem_mbx[2].num() != 0) begin
-            $error("[TB] FAIL multiple cores: unexpected response in core 2");
+            $error("[%0t] [TB] FAIL multiple_cores unexpected response core=2", $realtime);
         end
 
         // Test 3: BusUpd should be ignored
-        $display("@%0t [TB] TEST 3: BusUpd ignored", $realtime);
+        $display("[%0t] [TB] TEST start id=3 name=BusUpd_ignored", $realtime);
         drain_mailboxes();
         send_req(BusUpd, 32'h0000_4000, 2);
         expect_no_response_all("BusUpd ignored");
 
         // Test 4: burst requests (FIFO order)
-        $display("@%0t [TB] TEST 4: burst requests FIFO", $realtime);
+        $display("[%0t] [TB] TEST start id=4 name=burst_FIFO", $realtime);
         drain_mailboxes();
         burst_addr[0] = 32'h0000_5000; burst_core[0] = 0; t_start_burst[0] = $time;
         send_req(BusRd, burst_addr[0], burst_core[0]);
@@ -188,26 +189,27 @@ module memory_tb;
         for (int i = 0; i < 3; i++) begin
             wait_for_any_response(got_core, burst_resp, burst_ready);
             if (!burst_ready) begin
-                $error("[TB] FAIL burst FIFO: timeout waiting for response %0d", i);
+                $error("[%0t] [TB] FAIL burst_FIFO timeout waiting for response %0d", $realtime, i);
             end else begin
                 t_end = $time;
                 delta = t_end - t_start_burst[i];
                 if (delta < MEM_LATENCY_CYCLES) begin
-                    $error("[TB] FAIL burst FIFO: latency too small (%0t ns)", delta);
+                    $error("[%0t] [TB] FAIL burst_FIFO latency too small (%0t ns)", $realtime, delta);
                 end
                 if (got_core != burst_core[i] ||
                     burst_resp.dest_core_id != burst_core[i] ||
                     burst_resp.address != burst_addr[i]) begin
-                    $error("[TB] FAIL burst FIFO: expected core=%0d addr=%h got core=%0d addr=%h",
-                        burst_core[i], burst_addr[i], got_core, burst_resp.address);
+                    $error("[%0t] [TB] FAIL burst_FIFO expected core=%0d addr=%s got core=%0d addr=%s",
+                        $realtime, burst_core[i], fmt_addr(burst_addr[i]), got_core,
+                        fmt_addr(burst_resp.address));
                 end else begin
-                    $display("@%0t [TB] PASS burst FIFO idx=%0d", $realtime, i);
+                    $display("[%0t] [TB] PASS burst_FIFO idx=%0d", $realtime, i);
                 end
             end
         end
 
         // Test 5: metrics validation
-        $display("@%0t [TB] TEST 5: metrics validation", $realtime);
+        $display("[%0t] [TB] TEST start id=5 name=metrics_validation", $realtime);
         drain_mailboxes();
         #1;
 
@@ -240,60 +242,70 @@ module memory_tb;
         ok_metrics = 1;
         if (mem.total_requests != 4) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: total_requests=%0d expected=4", mem.total_requests);
+            $error("[%0t] [TB] FAIL metrics total_requests=%0d expected=4",
+                $realtime, mem.total_requests);
         end
         if (mem.total_responses != 3) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: total_responses=%0d expected=3", mem.total_responses);
+            $error("[%0t] [TB] FAIL metrics total_responses=%0d expected=3",
+                $realtime, mem.total_responses);
         end
         if (mem.busrd_count != 2) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: busrd_count=%0d expected=2", mem.busrd_count);
+            $error("[%0t] [TB] FAIL metrics busrd_count=%0d expected=2",
+                $realtime, mem.busrd_count);
         end
         if (mem.busrdx_count != 1) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: busrdx_count=%0d expected=1", mem.busrdx_count);
+            $error("[%0t] [TB] FAIL metrics busrdx_count=%0d expected=1",
+                $realtime, mem.busrdx_count);
         end
         if (mem.busupd_count != 1) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: busupd_count=%0d expected=1", mem.busupd_count);
+            $error("[%0t] [TB] FAIL metrics busupd_count=%0d expected=1",
+                $realtime, mem.busupd_count);
         end
         // Scaffolding check: no write-backs should be triggered yet.
         if (mem.writeback_count != 0) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: writeback_count=%0d expected=0", mem.writeback_count);
+            $error("[%0t] [TB] FAIL metrics writeback_count=%0d expected=0",
+                $realtime, mem.writeback_count);
         end
         if (mem.responses_per_core[0] != 1) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: core0 responses=%0d expected=1", mem.responses_per_core[0]);
+            $error("[%0t] [TB] FAIL metrics core0 responses=%0d expected=1",
+                $realtime, mem.responses_per_core[0]);
         end
         if (mem.responses_per_core[1] != 1) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: core1 responses=%0d expected=1", mem.responses_per_core[1]);
+            $error("[%0t] [TB] FAIL metrics core1 responses=%0d expected=1",
+                $realtime, mem.responses_per_core[1]);
         end
         if (mem.responses_per_core[2] != 0) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: core2 responses=%0d expected=0", mem.responses_per_core[2]);
+            $error("[%0t] [TB] FAIL metrics core2 responses=%0d expected=0",
+                $realtime, mem.responses_per_core[2]);
         end
         if (mem.responses_per_core[3] != 1) begin
             ok_metrics = 0;
-            $error("[TB] FAIL metrics: core3 responses=%0d expected=1", mem.responses_per_core[3]);
+            $error("[%0t] [TB] FAIL metrics core3 responses=%0d expected=1",
+                $realtime, mem.responses_per_core[3]);
         end
 
         if (mem.total_responses > 0) begin
             avg_service_time = mem.total_service_time / mem.total_responses;
             if (avg_service_time < MEM_LATENCY_CYCLES) begin
                 ok_metrics = 0;
-                $error("[TB] FAIL metrics: avg_service_time=%0t expected >= %0d",
-                    avg_service_time, MEM_LATENCY_CYCLES);
+                $error("[%0t] [TB] FAIL metrics avg_service_time=%0t expected >= %0d",
+                    $realtime, avg_service_time, MEM_LATENCY_CYCLES);
             end
         end
 
         if (ok_metrics) begin
-            $display("@%0t [TB] PASS metrics validation", $realtime);
+            $display("[%0t] [TB] PASS metrics_validation", $realtime);
         end
 
-        $display("@%0t [TB] ALL TESTS COMPLETE", $realtime);
+        $display("[%0t] [TB] DONE all_tests", $realtime);
         #10;
         $finish;
     end

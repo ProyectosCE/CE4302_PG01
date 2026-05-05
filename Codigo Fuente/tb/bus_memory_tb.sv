@@ -52,19 +52,19 @@ module bus_memory_tb;
 
         wait_for_response(core_id, ready);
         if (!ready) begin
-            $error("[TB] FAIL %s: timeout waiting for response", label);
+            $error("[%0t] [TB] FAIL %s timeout waiting for response", $realtime, label);
         end else begin
             mem_mbx[core_id].get(resp);
             t_end = $time;
             delta = t_end - t_start;
             if (delta < MIN_TOTAL_LATENCY) begin
-                $error("[TB] FAIL %s: latency too small (%0t ns)", label, delta);
+                $error("[%0t] [TB] FAIL %s latency too small (%0t ns)", $realtime, label, delta);
             end
             if (resp.address != addr || resp.dest_core_id != core_id) begin
-                $error("[TB] FAIL %s: wrong response addr=%h dest=%0d",
-                    label, resp.address, resp.dest_core_id);
+                $error("[%0t] [TB] FAIL %s wrong response addr=%s dest=%0d",
+                    $realtime, label, fmt_addr(resp.address), resp.dest_core_id);
             end else begin
-                $display("@%0t [TB] PASS %s", $realtime, label);
+                $display("[%0t] [TB] PASS %s", $realtime, label);
             end
         end
     endtask
@@ -78,12 +78,13 @@ module bus_memory_tb;
         for (int i = 0; i < NUM_CORES; i++) begin
             if (mem_mbx[i].num() != 0) begin
                 ok = 0;
-                $error("[TB] FAIL %s: unexpected response in core %0d mailbox", label, i);
+                $error("[%0t] [TB] FAIL %s unexpected response in core %0d mailbox",
+                    $realtime, label, i);
             end
         end
 
         if (ok) begin
-            $display("@%0t [TB] PASS %s", $realtime, label);
+            $display("[%0t] [TB] PASS %s", $realtime, label);
         end
     endtask
 
@@ -109,7 +110,7 @@ module bus_memory_tb;
 
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST BUS-MEMORY (PHASE 6)");
+        $display("[%0t] [TB] START TEST bus_memory phase=6", $realtime);
 
         bus_mbx = new();
         bus_to_mem_mbx = new();
@@ -148,37 +149,37 @@ module bus_memory_tb;
         #1;
 
         // Test 1: BusRd forwarding
-        $display("@%0t [TB] TEST 1: BusRd forwarding", $realtime);
+        $display("[%0t] [TB] TEST start id=1 name=BusRd_forwarding", $realtime);
         drain_mailboxes();
         t_start = $time;
         send_req(BusRd, 32'h0000_1000, 0);
         expect_response(0, 32'h0000_1000, t_start, "BusRd forward");
 
         // Test 2: BusRdX forwarding
-        $display("@%0t [TB] TEST 2: BusRdX forwarding", $realtime);
+        $display("[%0t] [TB] TEST start id=2 name=BusRdX_forwarding", $realtime);
         drain_mailboxes();
         t_start = $time;
         send_req(BusRdX, 32'h0000_2000, 1);
         expect_response(1, 32'h0000_2000, t_start, "BusRdX forward");
 
         // Test 3: BusUpd should not be forwarded
-        $display("@%0t [TB] TEST 3: BusUpd no forward", $realtime);
+        $display("[%0t] [TB] TEST start id=3 name=BusUpd_no_forward", $realtime);
         drain_mailboxes();
         req_before = mem.total_requests;
         busupd_before = mem.busupd_count;
         send_req(BusUpd, 32'h0000_3000, 2);
         expect_no_response_all("BusUpd no response");
         if (mem.total_requests != req_before) begin
-            $error("[TB] FAIL BusUpd forwarding: total_requests=%0d expected=%0d",
-                mem.total_requests, req_before);
+            $error("[%0t] [TB] FAIL BusUpd_forward total_requests=%0d expected=%0d",
+                $realtime, mem.total_requests, req_before);
         end
         if (mem.busupd_count != busupd_before) begin
-            $error("[TB] FAIL BusUpd forwarding: busupd_count=%0d expected=%0d",
-                mem.busupd_count, busupd_before);
+            $error("[%0t] [TB] FAIL BusUpd_forward busupd_count=%0d expected=%0d",
+                $realtime, mem.busupd_count, busupd_before);
         end
 
         // Test 4: multiple requests from same core (FIFO end-to-end)
-        $display("@%0t [TB] TEST 4: FIFO end-to-end", $realtime);
+        $display("[%0t] [TB] TEST start id=4 name=FIFO_end_to_end", $realtime);
         drain_mailboxes();
         burst_addr[0] = 32'h0000_A000; t_start_burst[0] = $time;
         send_req(BusRd, burst_addr[0], 0);
@@ -190,24 +191,24 @@ module bus_memory_tb;
         for (int i = 0; i < 3; i++) begin
             wait_for_response(0, burst_ready);
             if (!burst_ready) begin
-                $error("[TB] FAIL FIFO: timeout waiting for response %0d", i);
+                $error("[%0t] [TB] FAIL FIFO timeout waiting for response %0d", $realtime, i);
             end else begin
                 mem_mbx[0].get(burst_resp);
                 t_end = $time;
                 delta = t_end - t_start_burst[i];
                 if (delta < MIN_TOTAL_LATENCY) begin
-                    $error("[TB] FAIL FIFO: latency too small (%0t ns)", delta);
+                    $error("[%0t] [TB] FAIL FIFO latency too small (%0t ns)", $realtime, delta);
                 end
                 if (burst_resp.address != burst_addr[i] || burst_resp.dest_core_id != 0) begin
-                    $error("[TB] FAIL FIFO: expected addr=%h got addr=%h",
-                        burst_addr[i], burst_resp.address);
+                    $error("[%0t] [TB] FAIL FIFO expected addr=%s got addr=%s",
+                        $realtime, fmt_addr(burst_addr[i]), fmt_addr(burst_resp.address));
                 end else begin
-                    $display("@%0t [TB] PASS FIFO idx=%0d", $realtime, i);
+                    $display("[%0t] [TB] PASS FIFO idx=%0d", $realtime, i);
                 end
             end
         end
 
-        $display("@%0t [TB] ALL TESTS COMPLETE", $realtime);
+        $display("[%0t] [TB] DONE all_tests", $realtime);
         #10;
         $finish;
     end

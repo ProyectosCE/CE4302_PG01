@@ -100,33 +100,41 @@ class Core;
     virtual task run();
 
         if (to_cache == null) begin
-            $fatal(1, "[Core %0d] Mailbox to_cache no inicializado", core_id);
+            $fatal(1, "[%0t] [CORE] [Core %0d] ERROR to_cache no inicializado", $realtime, core_id);
         end
         if (from_cache == null) begin
-            $fatal(1, "[Core %0d] Mailbox from_cache no inicializado", core_id);
+            $fatal(1, "[%0t] [CORE] [Core %0d] ERROR from_cache no inicializado", $realtime, core_id);
         end
 
-        $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",
+        $display("[%0t] [CORE] [Core %0d] START requests=%0d",
             $realtime, core_id, trace_queue.size());
 
         foreach (trace_queue[i]) begin
             CoreRequest req = trace_queue[i];
             CoreResponse resp;
 
-            $display("@%0t [Core %0d] Enviando %s addr=%h",
-                $realtime, core_id,
-                (req.req_type == PrRd) ? "PrRd" : "PrWr",
-                req.address);
+            time t_req_start;
+            time t_req_end;
+            time req_latency;
+
+            t_req_start = $realtime;
+            $display("[%0t] [CORE] [Core %0d] REQ_START type=%s addr=%s",
+                $realtime, core_id, core_req_name(req.req_type), fmt_addr(req.address));
 
             to_cache.put(req);
 
             // FIX: core blocking hasta completar la solicitud.
             from_cache.get(resp);
 
+            t_req_end = $realtime;
+            req_latency = t_req_end - t_req_start;
+            $display("[%0t] [CORE] [Core %0d] REQ_DONE type=%s addr=%s latency=%0t",
+                $realtime, core_id, core_req_name(resp.req_type), fmt_addr(resp.address), req_latency);
+
             #10; // delay entre instrucciones (simulación)
         end
 
-        $display("@%0t [Core %0d] Finalizo ejecucion", $realtime, core_id);
+        $display("[%0t] [CORE] [Core %0d] DONE", $realtime, core_id);
 
     endtask
 

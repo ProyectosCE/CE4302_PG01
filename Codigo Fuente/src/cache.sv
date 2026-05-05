@@ -166,7 +166,8 @@ class Cache;
                 firefly_impl = new();
                 this.protocol = firefly_impl;
             end
-            default: $fatal(1, "[Cache %0d] Protocolo invalido: %0d", cache_id, protocol_sel);
+            default: $fatal(1, "[%0t] [CACHE] [Core %0d] ERROR protocolo invalido: %0d",
+                $realtime, cache_id, protocol_sel);
         endcase
 
         foreach (lines[i]) begin
@@ -228,8 +229,8 @@ class Cache;
     task log_state_change(state_e old_state, state_e new_state, logic [31:0] addr);
         if (old_state != new_state) begin
             state_transition_count++;
-            $display("@%0t [Cache %0d] STATE CHANGE: %s -> %s addr=%h",
-                $realtime, cache_id, state_name(old_state), state_name(new_state), addr);
+            $display("[%0t] [CACHE] [Core %0d] STATE_CHANGE %s->%s addr=%s",
+                $realtime, cache_id, state_name(old_state), state_name(new_state), fmt_addr(addr));
         end
     endtask
 
@@ -243,14 +244,16 @@ class Cache;
     virtual task run();
 
         if (from_core == null || to_bus == null || from_mem == null || from_bus == null) begin
-            $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
+            $fatal(1, "[%0t] [CACHE] [Core %0d] ERROR mailboxes no inicializados",
+                $realtime, cache_id);
         end
 
         if (protocol == null) begin
-            $fatal(1, "[Cache %0d] Protocolo no inicializado", cache_id);
+            $fatal(1, "[%0t] [CACHE] [Core %0d] ERROR protocolo no inicializado",
+                $realtime, cache_id);
         end
 
-        $display("@%0t [Cache %0d] Iniciando (protocol=%0d)", $realtime, cache_id, protocol_mode);
+        $display("[%0t] [CACHE] [Core %0d] START protocol=%0d", $realtime, cache_id, protocol_mode);
 
         fork
             handle_core_requests(); // Atiende peticiones del core
@@ -296,42 +299,44 @@ class Cache;
             hit = (valid_line && old_state != Invalid);
 
             if (valid_line && old_state == Modified && !hit) begin
-                $error("[Cache %0d] Invalid MISS: state=M addr=%h", cache_id, req.address);
+                $error("[%0t] [CACHE] [Core %0d] ERROR invalid MISS state=M addr=%s",
+                    $realtime, cache_id, fmt_addr(req.address));
             end
             if (old_state == Invalid && hit) begin
-                $error("[Cache %0d] Invalid HIT: state=I addr=%h", cache_id, req.address);
+                $error("[%0t] [CACHE] [Core %0d] ERROR invalid HIT state=I addr=%s",
+                    $realtime, cache_id, fmt_addr(req.address));
             end
 
             if (valid_line && old_state == Modified && req.req_type == PrRd && !hit) begin
-                $error("[Cache %0d] PrRd invalido: state=M sin HIT addr=%h",
-                    cache_id, req.address);
+                $error("[%0t] [CACHE] [Core %0d] ERROR PrRd invalido state=M sin HIT addr=%s",
+                    $realtime, cache_id, fmt_addr(req.address));
             end
 
-            $display("@%0t [Cache %0d] STATE BEFORE addr=%h state=%s tag_match=%0d",
-                $realtime, cache_id, req.address, state_name(log_state), tag_match);
+            $display("[%0t] [CACHE] [Core %0d] STATE_BEFORE addr=%s state=%s tag_match=%0d",
+                $realtime, cache_id, fmt_addr(req.address), state_name(log_state), tag_match);
 
             if (valid_line && old_state == Modified) begin
-                $display("@%0t [Cache %0d] ACCESS M addr=%h -> %s",
-                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS");
+                $display("[%0t] [CACHE] [Core %0d] ACCESS_M addr=%s result=%s",
+                    $realtime, cache_id, fmt_addr(req.address), hit ? "HIT" : "MISS");
             end
 
             if (req.req_type == PrRd) begin
                 read_count++;
-                action_hint = hit ? "" : " -> BusRd";
-                $display("@%0t [Cache %0d] PrRd %h -> %s (state=%s)%s",
-                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS",
+                action_hint = hit ? "none" : "BusRd";
+                $display("[%0t] [CACHE] [Core %0d] PRRD addr=%s result=%s state=%s action=%s",
+                    $realtime, cache_id, fmt_addr(req.address), hit ? "HIT" : "MISS",
                     state_name(log_state), action_hint);
             end else begin
                 write_count++;
                 if (!hit) begin
-                    action_hint = " -> BusRdX";
+                    action_hint = "BusRdX";
                 end else if (old_state == Shared) begin
-                    action_hint = (protocol_mode == FIREFLY) ? " -> BusUpd" : " -> BusRdX";
+                    action_hint = (protocol_mode == FIREFLY) ? "BusUpd" : "BusRdX";
                 end else begin
-                    action_hint = "";
+                    action_hint = "none";
                 end
-                $display("@%0t [Cache %0d] PrWr %h -> %s (state=%s)%s",
-                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS",
+                $display("[%0t] [CACHE] [Core %0d] PRWR addr=%s result=%s state=%s action=%s",
+                    $realtime, cache_id, fmt_addr(req.address), hit ? "HIT" : "MISS",
                     state_name(log_state), action_hint);
             end
 
@@ -358,8 +363,8 @@ class Cache;
             new_state = lines[index].state;
             log_state_change(old_state, new_state, req.address);
 
-            $display("@%0t [Cache %0d] STATE AFTER addr=%h state=%s",
-                $realtime, cache_id, req.address, state_name(new_state));
+            $display("[%0t] [CACHE] [Core %0d] STATE_AFTER addr=%s state=%s",
+                $realtime, cache_id, fmt_addr(req.address), state_name(new_state));
 
             // FIX: respuesta al core (bloqueo hasta completar solicitud).
             if (to_core != null) begin
@@ -417,6 +422,12 @@ class Cache;
             new_state = lines[index].state;
             if (evt.req_type == BusRdX && old_state != Invalid && new_state == Invalid) begin
                 invalidation_count++;
+                if (old_state == Modified) begin
+                    $display("[%0t] [CACHE] [Core %0d] WRITEBACK addr=%s reason=BusRdX from_core=%0d",
+                        $realtime, cache_id, fmt_addr(evt.address), evt.src_core_id);
+                end
+                $display("[%0t] [CACHE] [Core %0d] SNOOP_INV addr=%s from_core=%0d",
+                    $realtime, cache_id, fmt_addr(evt.address), evt.src_core_id);
             end
             log_state_change(old_state, new_state, evt.address);
 
@@ -435,15 +446,10 @@ class Cache;
         total_accesses = hit_count + miss_count;
         hit_rate = (total_accesses > 0) ? (real'(hit_count) / total_accesses) : 0.0;
 
-        $display("[Cache %0d Metrics]", cache_id);
-        $display("Reads: %0d", read_count);
-        $display("Writes: %0d", write_count);
-        $display("Hits: %0d", hit_count);
-        $display("Misses: %0d", miss_count);
-        $display("Hit Rate: %0f", hit_rate);
-        $display("Invalidations: %0d", invalidation_count);
-        $display("State Transitions: %0d", state_transition_count);
-        $display("-------------------------------------------");
+        $display("[%0t] [CACHE] [Core %0d] METRICS reads=%0d writes=%0d hits=%0d misses=%0d hit_rate=%0f",
+            $realtime, cache_id, read_count, write_count, hit_count, miss_count, hit_rate);
+        $display("[%0t] [CACHE] [Core %0d] METRICS invalidations=%0d state_transitions=%0d",
+            $realtime, cache_id, invalidation_count, state_transition_count);
     endfunction
 
 endclass

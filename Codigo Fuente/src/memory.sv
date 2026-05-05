@@ -58,12 +58,7 @@ class Memory;
 
 	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
 	function string req_type_name(bus_req_type_e req_type);
-		case (req_type)
-			BusRd:  return "BusRd";
-			BusRdX: return "BusRdX";
-			BusUpd: return "BusUpd";
-			default: return "Unknown";
-		endcase
+		return bus_req_name(req_type);
 	endfunction
 
 	/**
@@ -83,7 +78,7 @@ class Memory;
 		this.num_cores = num_cores;
 
 		if (this.num_cores <= 0) begin
-			$fatal(1, "[Memory] num_cores invalido: %0d", this.num_cores);
+			$fatal(1, "[%0t] [MEM] ERROR num_cores invalido: %0d", $realtime, this.num_cores);
 		end
 
 		total_requests = 0;
@@ -112,7 +107,8 @@ class Memory;
 			from_bus.get(req);
 
 			if (req.src_core_id < 0 || req.src_core_id >= num_cores) begin
-				$fatal(1, "[Memory] src_core_id out of range: %0d", req.src_core_id);
+				$fatal(1, "[%0t] [MEM] ERROR src_core_id out of range: %0d",
+					$realtime, req.src_core_id);
 			end
 
 			case (req.req_type)
@@ -130,20 +126,21 @@ class Memory;
 				default: ;
 			endcase
 
-			$display("@%0t [Memory] RX core=%0d type=%s addr=%h",
-				$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
+			$display("[%0t] [MEM] [Core %0d] RX type=%s addr=%s",
+				$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address));
 
 			if (req.req_type == BusUpd) begin
-				$display("@%0t [Memory] IGNORE BusUpd (no memory access)",
-					$realtime);
+				$display("[%0t] [MEM] [Core %0d] IGNORE type=BusUpd no memory access",
+					$realtime, req.src_core_id);
 				continue;
 			end
 
 			item.req = req;
 			item.arrival_time = $time;
 			req_mbx.put(item);
-			$display("@%0t [Memory] ENQ core=%0d type=%s addr=%h (q=%0d)",
-				$realtime, req.src_core_id, req_type_name(req.req_type), req.address, req_mbx.num());
+			$display("[%0t] [MEM] [Core %0d] ENQ type=%s addr=%s q=%0d",
+				$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address),
+				req_mbx.num());
 		end
 	endtask
 
@@ -161,8 +158,9 @@ class Memory;
 		forever begin
 			req_mbx.get(item);
 			req = item.req;
-			$display("@%0t [Memory] DEQ core=%0d type=%s addr=%h (q=%0d)",
-				$realtime, req.src_core_id, req_type_name(req.req_type), req.address, req_mbx.num());
+			$display("[%0t] [MEM] [Core %0d] DEQ type=%s addr=%s q=%0d",
+				$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address),
+				req_mbx.num());
 
 			if (is_writeback(req)) begin
 				handle_writeback(req);
@@ -179,8 +177,8 @@ class Memory;
 				resp = new(req.address, req.src_core_id);
 				to_cache[req.src_core_id].put(resp);
 
-				$display("@%0t [Memory] TX core=%0d addr=%h",
-					$realtime, req.src_core_id, req.address);
+				$display("[%0t] [MEM] [Core %0d] TX addr=%s service=%0t",
+					$realtime, req.src_core_id, fmt_addr(req.address), service_time);
 			end
 		end
 	endtask
@@ -191,8 +189,8 @@ class Memory;
 	 */
 	task handle_writeback(BusRequest req);
 		writeback_count++;
-		$display("@%0t [Memory] WB stub core=%0d addr=%h",
-			$realtime, req.src_core_id, req.address);
+		$display("[%0t] [MEM] [Core %0d] WB stub addr=%s",
+			$realtime, req.src_core_id, fmt_addr(req.address));
 	endtask
 
 
@@ -202,29 +200,23 @@ class Memory;
 	task print_metrics();
 		time avg_service_time;
 
-		$display("----------------------------------------");
-		$display("[Memory Metrics]");
-		$display("Total requests: %0d", total_requests);
-		$display("Total responses: %0d", total_responses);
-		$display("");
-		$display("BusRd count: %0d", busrd_count);
-		$display("BusRdX count: %0d", busrdx_count);
-		$display("BusUpd count: %0d", busupd_count);
-		$display("");
-		$display("Responses per core:");
+		$display("[%0t] [MEM] METRICS total_requests=%0d total_responses=%0d",
+			$realtime, total_requests, total_responses);
+		$display("[%0t] [MEM] METRICS BusRd=%0d BusRdX=%0d BusUpd=%0d",
+			$realtime, busrd_count, busrdx_count, busupd_count);
 		for (int i = 0; i < responses_per_core.size(); i++) begin
-			$display("Core%0d: %0d", i, responses_per_core[i]);
+			$display("[%0t] [MEM] METRICS per_core core=%0d responses=%0d",
+				$realtime, i, responses_per_core[i]);
 		end
 		if (total_responses > 0) begin
 			avg_service_time = total_service_time / total_responses;
-			$display("");
-			$display("Average service time: %0t", avg_service_time);
+			$display("[%0t] [MEM] METRICS avg_service_time=%0t",
+				$realtime, avg_service_time);
 		end
 		if (total_requests != total_responses) begin
-			$error("[Memory] total_requests != total_responses (%0d != %0d)",
-				total_requests, total_responses);
+			$error("[%0t] [MEM] ERROR total_requests != total_responses (%0d != %0d)",
+				$realtime, total_requests, total_responses);
 		end
-		$display("----------------------------------------");
 	endtask
 
 
@@ -233,17 +225,17 @@ class Memory;
 	 */
 	task run();
 		if (from_bus == null) begin
-			$fatal(1, "[Memory] from_bus no inicializado");
+			$fatal(1, "[%0t] [MEM] ERROR from_bus no inicializado", $realtime);
 		end
 
 		if (to_cache.size() < num_cores) begin
-			$fatal(1, "[Memory] to_cache size=%0d, num_cores=%0d",
-				to_cache.size(), num_cores);
+			$fatal(1, "[%0t] [MEM] ERROR to_cache size=%0d num_cores=%0d",
+				$realtime, to_cache.size(), num_cores);
 		end
 
 		for (int i = 0; i < num_cores; i++) begin
 			if (to_cache[i] == null) begin
-				$fatal(1, "[Memory] to_cache[%0d] no inicializado", i);
+				$fatal(1, "[%0t] [MEM] ERROR to_cache[%0d] no inicializado", $realtime, i);
 			end
 		end
 

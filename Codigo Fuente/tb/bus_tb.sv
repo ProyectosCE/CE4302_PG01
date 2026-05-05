@@ -43,7 +43,8 @@ module bus_tb;
 		if (req_type == BusRd || req_type == BusRdX) begin
 			expected_mem_responses++;
 		end
-		$display("@%0t [TB] SEND core=%0d type=%0d addr=%h", $realtime, core_id, req_type, address);
+		$display("[%0t] [TB] SEND core=%0d type=%s addr=%s",
+			$realtime, core_id, bus_req_name(req_type), fmt_addr(address));
 	endtask
 
 	// Monitor de eventos de bus por core.
@@ -55,15 +56,16 @@ module bus_tb;
 			total_evt_received++;
 			if (evt.src_core_id < 0 || evt.src_core_id >= NUM_CORES) begin
 				invalid_src_count++;
-				$error("[TB] Evento con src_core_id invalido=%0d", evt.src_core_id);
+				$error("[%0t] [TB] ERROR evento src_core_id invalido=%0d",
+					$realtime, evt.src_core_id);
 			end
 			// Se usa la auto-observacion (core_id == src) como aproximacion del orden.
 			// No es global, pero es suficiente para una validacion basica de equidad.
 			if (core_id == evt.src_core_id) begin
 				grant_order.push_back(evt.src_core_id);
 			end
-			$display("@%0t [TB] EVT core=%0d type=%0d addr=%h src=%0d",
-				$realtime, core_id, evt.req_type, evt.address, evt.src_core_id);
+			$display("[%0t] [TB] EVT core=%0d type=%s addr=%s src=%0d",
+				$realtime, core_id, bus_req_name(evt.req_type), fmt_addr(evt.address), evt.src_core_id);
 		end
 	endtask
 
@@ -74,23 +76,24 @@ module bus_tb;
 			mem_mbx[core_id].get(resp);
 			mem_count[core_id]++;
 			total_mem_received++;
-			$display("@%0t [TB] MEM_RESP core=%0d addr=%h", $realtime, core_id, resp.address);
+			$display("[%0t] [TB] MEM_RESP core=%0d addr=%s",
+				$realtime, core_id, fmt_addr(resp.address));
 		end
 	endtask
 
 	// Escenario 1: solicitudes secuenciales de un solo core.
 	task automatic scenario_sequential();
-		$display("@%0t [TB] SCENARIO 1 START", $realtime);
+		$display("[%0t] [TB] SCENARIO start id=1", $realtime);
 		for (int i = 0; i < 6; i++) begin
 			send_request(0, BusRd, 32'h0000_1000 + i * 32);
 			#2;
 		end
-		$display("@%0t [TB] SCENARIO 1 END", $realtime);
+		$display("[%0t] [TB] SCENARIO end id=1", $realtime);
 	endtask
 
 	// Escenario 2: contencion entre cores con tipos mixtos.
 	task automatic scenario_contention();
-		$display("@%0t [TB] SCENARIO 2 START", $realtime);
+		$display("[%0t] [TB] SCENARIO start id=2", $realtime);
 		fork
 			send_request(0, BusRd,  32'h0000_2000);
 			send_request(1, BusRdX, 32'h0000_2040);
@@ -104,12 +107,12 @@ module bus_tb;
 			send_request(2, BusRdX, 32'h0000_2180);
 			send_request(3, BusUpd, 32'h0000_21C0);
 		join
-		$display("@%0t [TB] SCENARIO 2 END", $realtime);
+		$display("[%0t] [TB] SCENARIO end id=2", $realtime);
 	endtask
 
 	// Escenario 3: rafaga de un core con inserciones ocasionales de otros.
 	task automatic scenario_burst();
-		$display("@%0t [TB] SCENARIO 3 START", $realtime);
+		$display("[%0t] [TB] SCENARIO start id=3", $realtime);
 		fork
 			begin
 				for (int i = 0; i < 8; i++) begin
@@ -123,12 +126,12 @@ module bus_tb;
 				#5; send_request(3, BusRd,  32'h0000_3480);
 			end
 		join
-		$display("@%0t [TB] SCENARIO 3 END", $realtime);
+		$display("[%0t] [TB] SCENARIO end id=3", $realtime);
 	endtask
 
 	// Escenario 4: mezcla aleatoria de operaciones.
 	task automatic scenario_mixed();
-		$display("@%0t [TB] SCENARIO 4 START", $realtime);
+		$display("[%0t] [TB] SCENARIO start id=4", $realtime);
 		for (int i = 0; i < 12; i++) begin
 			int sel;
 			bus_req_type_e t;
@@ -141,17 +144,17 @@ module bus_tb;
 			send_request(i % NUM_CORES, t, 32'h0000_4000 + i * 8);
 			#2;
 		end
-		$display("@%0t [TB] SCENARIO 4 END", $realtime);
+		$display("[%0t] [TB] SCENARIO end id=4", $realtime);
 	endtask
 
 	// Escenario 5: inactividad seguida de reactivacion.
 	task automatic scenario_idle_wakeup();
-		$display("@%0t [TB] SCENARIO 5 START", $realtime);
+		$display("[%0t] [TB] SCENARIO start id=5", $realtime);
 		#50;
 		send_request(2, BusRdX, 32'h0000_5000);
 		#10;
 		send_request(3, BusRd,  32'h0000_5040);
-		$display("@%0t [TB] SCENARIO 5 END", $realtime);
+		$display("[%0t] [TB] SCENARIO end id=5", $realtime);
 	endtask
 
 	// Inicializacion del bus y mailboxes.
@@ -191,7 +194,7 @@ module bus_tb;
 	// Vigilante de tiempo para evitar bloqueos silenciosos.
 	initial begin
 		#MAX_SIM_TIME;
-		$fatal(1, "[TB] TIMEOUT: la simulacion excedio el tiempo esperado");
+		$fatal(1, "[%0t] [TB] ERROR timeout simulacion excedio tiempo esperado", $realtime);
 	end
 
 	// Flujo principal de prueba.
@@ -233,38 +236,38 @@ module bus_tb;
 		bus.print_metrics();
 
 		// Chequeos de sanidad basados en conteos.
-		$display("===== VALIDACION TESTBENCH =====");
-		$display("@%0t [TB] RESUMEN_EVENTOS total_enviados=%0d", $realtime, total_sent);
-		$display("@%0t [TB] RESUMEN_TOTALES evt_recibidos=%0d mem_recibidos=%0d",
+		$display("[%0t] [TB] VALIDATION start", $realtime);
+		$display("[%0t] [TB] SUMMARY total_enviados=%0d", $realtime, total_sent);
+		$display("[%0t] [TB] SUMMARY evt_recibidos=%0d mem_recibidos=%0d",
 			$realtime, total_evt_received, total_mem_received);
-		$display("@%0t [TB] ESPERADOS evt=%0d mem=%0d",
+		$display("[%0t] [TB] SUMMARY esperados evt=%0d mem=%0d",
 			$realtime, expected_broadcast_events, expected_mem_responses);
 		for (int i = 0; i < NUM_CORES; i++) begin
-			$display("@%0t [TB] CONTADORES core=%0d enviados=%0d evt=%0d mem=%0d",
+			$display("[%0t] [TB] SUMMARY core=%0d enviados=%0d evt=%0d mem=%0d",
 				$realtime, i, sent_count[i], evt_count[i], mem_count[i]);
 		end
 
 		// En concurrencia no se exige igualdad exacta; se aplica un umbral fuerte.
 		min_expected = (expected_broadcast_events * 7) / 10;
 		if (total_evt_received < min_expected)
-			$error("[TB] Difusion insuficiente: minimo=%0d recibido=%0d",
-				min_expected, total_evt_received);
+			$error("[%0t] [TB] ERROR difusion insuficiente minimo=%0d recibido=%0d",
+				$realtime, min_expected, total_evt_received);
 		else
-			$display("[OK] Difusion dentro de margen esperado");
+			$display("[%0t] [TB] OK difusion dentro de margen esperado", $realtime);
 
 		// Respuestas de memoria solo para BusRd/BusRdX; pueden quedar en cola.
 		if (total_mem_received > expected_mem_responses)
-			$error("[TB] Respuestas de memoria excedidas: expected=%0d got=%0d",
-				expected_mem_responses, total_mem_received);
+			$error("[%0t] [TB] ERROR respuestas_mem excedidas expected=%0d got=%0d",
+				$realtime, expected_mem_responses, total_mem_received);
 		else if (total_mem_received < expected_mem_responses)
-			$display("[WARNING] Posibles respuestas pendientes en cola: expected=%0d got=%0d",
-				expected_mem_responses, total_mem_received);
+			$display("[%0t] [TB] WARN respuestas_mem pendientes expected=%0d got=%0d",
+				$realtime, expected_mem_responses, total_mem_received);
 		else
-			$display("[OK] Respuestas de memoria dentro del rango esperado");
+			$display("[%0t] [TB] OK respuestas_mem dentro de rango", $realtime);
 
 		if (bus.total_mem_accesses != expected_mem_responses)
-			$error("[TB] Inconsistencia en accesos a memoria: bus=%0d esperado=%0d",
-				bus.total_mem_accesses, expected_mem_responses);
+			$error("[%0t] [TB] ERROR inconsistencia accesos_mem bus=%0d esperado=%0d",
+				$realtime, bus.total_mem_accesses, expected_mem_responses);
 
 		active_cores = 0;
 		for (int c = 0; c < NUM_CORES; c++) begin
@@ -281,7 +284,7 @@ module bus_tb;
 				end
 			end
 			if (!seen && active_cores > 1)
-				$display("[WARNING] Posible inanicion para core %0d", c);
+				$display("[%0t] [TB] WARN posible inanicion core=%0d", $realtime, c);
 		end
 
 		// Verificacion de equidad: solo aplica si la carga por core es comparable.
@@ -303,31 +306,31 @@ module bus_tb;
 		end
 		if (active_cores > 1 && max_grants >= 0 && (max_sent - min_sent) <= rr_imbalance_threshold &&
 			(max_grants - min_grants) > rr_imbalance_threshold)
-			$display("[WARNING] Desbalance en arbitraje RR: max=%0d min=%0d",
-				max_grants, min_grants);
+			$display("[%0t] [TB] WARN desbalance arbitraje RR max=%0d min=%0d",
+				$realtime, max_grants, min_grants);
 
 		if (total_sent != bus.total_requests)
-			$error("[TB] total_sent != bus.total_requests (%0d != %0d)",
-				total_sent, bus.total_requests);
+			$error("[%0t] [TB] ERROR total_sent != bus.total_requests (%0d != %0d)",
+				$realtime, total_sent, bus.total_requests);
 		else
-			$display("[OK] total_sent matches bus.total_requests");
+			$display("[%0t] [TB] OK total_sent matches bus.total_requests", $realtime);
 
 		if (bus.total_grants > total_sent)
-			$error("[TB] total_grants supera total_sent (%0d > %0d)",
-				bus.total_grants, total_sent);
+			$error("[%0t] [TB] ERROR total_grants supera total_sent (%0d > %0d)",
+				$realtime, bus.total_grants, total_sent);
 		else if (bus.total_grants < total_sent)
-			$display("[WARNING] Transacciones pendientes: grants=%0d enviados=%0d",
-				bus.total_grants, total_sent);
+			$display("[%0t] [TB] WARN transacciones pendientes grants=%0d enviados=%0d",
+				$realtime, bus.total_grants, total_sent);
 		else
-			$display("[OK] total_grants coincide con total_sent");
+			$display("[%0t] [TB] OK total_grants coincide con total_sent", $realtime);
 
 		if (total_sent < 0 || total_evt_received < 0 || total_mem_received < 0)
-			$error("[TB] Contadores negativos detectados");
+			$error("[%0t] [TB] ERROR contadores negativos detectados", $realtime);
 		if (invalid_src_count > 0)
-			$error("[TB] Eventos con src_core_id invalido=%0d", invalid_src_count);
+			$error("[%0t] [TB] ERROR eventos src_core_id invalido=%0d", $realtime, invalid_src_count);
 
 		if (bus.total_total_latency < bus.total_queue_wait_time)
-			$error("[TB] Latencia inconsistente: total_latency < queue_wait");
+			$error("[%0t] [TB] ERROR latencia inconsistente total_latency < queue_wait", $realtime);
 
 		if (bus.count_BusRd > 0 && bus.count_BusRdX > 0 && bus.count_BusUpd > 0) begin
 			avg_rd = bus.latency_BusRd / bus.count_BusRd;
@@ -335,7 +338,7 @@ module bus_tb;
 			avg_upd = bus.latency_BusUpd / bus.count_BusUpd;
 			// La relacion depende del ancho de banda y del modelo de servicio.
 			if (avg_upd > avg_rd || avg_upd > avg_rdx)
-				$display("[INFO] Latencias relativas dependen del modelo de tiempo (tamano y BW)");
+				$display("[%0t] [TB] INFO latencias relativas dependen del modelo de tiempo", $realtime);
 		end
 
 		// Dominancia: solo se reporta si otros cores aun tienen solicitudes pendientes.
@@ -361,7 +364,8 @@ module bus_tb;
 					if (current == last) begin
 						streak++;
 						if (others_pending && streak > starvation_limit) begin
-							$display("[WARNING] Posible dominancia: core=%0d repite %0d veces", current, streak);
+							$display("[%0t] [TB] WARN posible dominancia core=%0d repite=%0d",
+								$realtime, current, streak);
 							streak = 1;
 						end
 					end else begin

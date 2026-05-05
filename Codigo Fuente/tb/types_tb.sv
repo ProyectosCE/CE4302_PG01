@@ -39,7 +39,7 @@ module types_tb;
         // Formato de impresión temporal unificado para todos los testbenches.
         $timeformat(-9, 3, " ns", 10);
 
-        $display("TEST types_pkg");
+        $display("[%0t] [TB] START TEST types_pkg", $realtime);
 
         // Test CoreRequest: Debe imprimir correctamente los campos
         cr = new(PrRd, 32'h1000, 0);
@@ -61,10 +61,10 @@ module types_tb;
         mbx = new();
         mbx.put(cr);
         mbx.get(cr2);
-        $display("Mailbox test -> recibido:");
+        $display("[%0t] [TB] MAILBOX rx", $realtime);
         cr2.print();
 
-        $display("TEST PASSED");
+        $display("[%0t] [TB] PASS types_pkg", $realtime);
         $finish;
     end
 

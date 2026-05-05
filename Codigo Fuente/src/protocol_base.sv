@@ -63,8 +63,8 @@ virtual class ProtocolBase;
         input MemResp_mbx from_mem
     );
         $fatal(1,
-            "[ProtocolBase] handle_core_request no implementado (cache=%0d addr=%h idx=%0d)",
-            cache_id, req.address, index);
+            "[%0t] [PROTO] [Core %0d] ERROR handle_core_request no implementado addr=%s idx=%0d",
+            $realtime, cache_id, fmt_addr(req.address), index);
     endtask
 
 
@@ -84,8 +84,8 @@ virtual class ProtocolBase;
         ref cache_line_t line
     );
         $fatal(1,
-            "[ProtocolBase] handle_snoop no implementado (cache=%0d addr=%h idx=%0d)",
-            cache_id, evt.address, index);
+            "[%0t] [PROTO] [Core %0d] ERROR handle_snoop no implementado addr=%s idx=%0d",
+            $realtime, cache_id, fmt_addr(evt.address), index);
     endtask
 
 endclass

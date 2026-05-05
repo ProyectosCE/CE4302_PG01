@@ -64,9 +64,9 @@ class EventMonitor;
                      (bus_req.req_type == BusRdX) ? "BusRdX" :
                      (bus_req.req_type == BusUpd) ? "BusUpd" : "Unknown";
 
-            $display("@%0t [EventMonitor] Core=%0d Op=%s Addr=%h",
+            $display("[%0t] [MONITOR] [Core %0d] BUS_EVT type=%s addr=%s",
                 $realtime, bus_req.src_core_id, bus_op,
-                bus_req.address);
+                fmt_addr(bus_req.address));
 
             if (exporter != null) begin
                 exporter.log_event($rtoi($realtime), bus_req.src_core_id, bus_op, bus_req.address);
@@ -100,11 +100,8 @@ class EventMonitor;
      * @brief Imprime las estadísticas acumuladas al finalizar la simulación.
      */
     task print_stats();
-        $display("\n=== EventMonitor Statistics ===");
-        $display("Total BusRd  : %0d", bus_rd_count);
-        $display("Total BusRdX : %0d", bus_rdx_count);
-        $display("Total BusUpd : %0d", bus_upd_count);
-        $display("==============================\n");
+        $display("[%0t] [MONITOR] METRICS BusRd=%0d BusRdX=%0d BusUpd=%0d",
+            $realtime, bus_rd_count, bus_rdx_count, bus_upd_count);
     endtask
 
 endclass

@@ -50,6 +50,31 @@ package types_pkg;
         BusUpd   ///< Actualización (Firefly)
     } bus_req_type_e;
 
+    function automatic string fmt_addr(logic [31:0] addr);
+        return $sformatf("0x%08h", addr);
+    endfunction
+
+    function automatic string core_req_name(core_req_type_e req_type);
+        case (req_type)
+            PrRd:   return "PrRd";
+            PrWr:   return "PrWr";
+            default: return "Unknown";
+        endcase
+    endfunction
+
+    function automatic string bus_req_name(bus_req_type_e req_type);
+        case (req_type)
+            BusRd:  return "BusRd";
+            BusRdX: return "BusRdX";
+            BusUpd: return "BusUpd";
+            default: return "Unknown";
+        endcase
+    endfunction
+
+    function automatic string core_tag(int core_id);
+        return $sformatf("Core %0d", core_id);
+    endfunction
+
 
     /**
      * ============================================
@@ -89,7 +114,8 @@ package types_pkg;
          * @brief Imprime la solicitud por consola (debug)
          */
         function void print();
-            $display("[CoreRequest] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
+            $display("[%0t] [TYPES] [Core %0d] CoreRequest type=%s addr=%s",
+                $realtime, src_core_id, core_req_name(req_type), fmt_addr(address));
         endfunction
     endclass
 
@@ -126,7 +152,8 @@ package types_pkg;
          * @brief Imprime la respuesta por consola (debug)
          */
         function void print();
-            $display("[CoreResponse] type=%0d addr=%h core=%0d", req_type, address, dest_core_id);
+            $display("[%0t] [TYPES] [Core %0d] CoreResponse type=%s addr=%s",
+                $realtime, dest_core_id, core_req_name(req_type), fmt_addr(address));
         endfunction
     endclass
 
@@ -173,7 +200,8 @@ package types_pkg;
          * @brief Imprime la solicitud por consola (debug)
          */
         function void print();
-            $display("[BusRequest] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
+            $display("[%0t] [TYPES] [Core %0d] BusRequest type=%s addr=%s",
+                $realtime, src_core_id, bus_req_name(req_type), fmt_addr(address));
         endfunction
     endclass
 
@@ -220,7 +248,8 @@ package types_pkg;
          * @brief Imprime el evento por consola (debug)
          */
         function void print();
-            $display("[BusEvent] type=%0d addr=%h core=%0d", req_type, address, src_core_id);
+            $display("[%0t] [TYPES] [Core %0d] BusEvent type=%s addr=%s",
+                $realtime, src_core_id, bus_req_name(req_type), fmt_addr(address));
         endfunction
     endclass
 
@@ -257,7 +286,8 @@ package types_pkg;
          * @brief Imprime la respuesta por consola (debug)
          */
         function void print();
-            $display("[MemResponse] addr=%h dest=%0d", address, dest_core_id);
+            $display("[%0t] [TYPES] [Core %0d] MemResponse addr=%s",
+                $realtime, dest_core_id, fmt_addr(address));
         endfunction
     endclass
 

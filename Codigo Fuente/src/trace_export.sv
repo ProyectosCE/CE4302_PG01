@@ -7,7 +7,8 @@ class TraceExporter;
     function new(string filename);
         file = $fopen(filename, "w");
         if (file == 0) begin
-            $fatal(1, "[TraceExporter] No se puede crear archivo: %s", filename);
+            $fatal(1, "[%0t] [TRACE_EXPORT] ERROR no se puede crear archivo: %s",
+                $realtime, filename);
         end
         // Escribir encabezado
         $fwrite(file, "time_ns,core_id,bus_op,address\n");

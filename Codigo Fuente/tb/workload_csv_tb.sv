@@ -72,7 +72,7 @@ module workload_csv_tb;
         end
 
         if (monitor == null) begin
-            $fatal(1, "[TopTB] EventMonitor no inicializado");
+            $fatal(1, "[%0t] [TB] ERROR EventMonitor no inicializado", $realtime);
         end
 
         // CACHES y BUS/MEMORIA en paralelo
@@ -116,7 +116,7 @@ module workload_csv_tb;
             trace_file = default_trace;
         end
 
-        $display("[TopTB] Cargando traces desde: %s", trace_file);
+        $display("[%0t] [TB] LOAD traces file=%s", $realtime, trace_file);
 
         loader = new(trace_file);
         loader.load_into_cores(cores);
@@ -130,10 +130,7 @@ module workload_csv_tb;
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
 
-        $display("========================================");
-        $display("   DEMO 2 - SISTEMA MULTICORE COMPLETO");
-        $display("           (Cargando desde traces)");
-        $display("========================================");
+        $display("[%0t] [TB] START demo=SISTEMA_MULTICORE_TRACES", $realtime);
 
         // Lee plusarg +TRACE_FILE, si no existe usa string vacío
         if (!$value$plusargs("TRACE_FILE=%s", trace_file)) begin
@@ -149,7 +146,7 @@ module workload_csv_tb;
 
         load_traces_from_file(trace_file);
 
-        $display("\n========== EJECUTANDO TRACES ==========\n");
+        $display("[%0t] [TB] RUN traces", $realtime);
 
         run_cores();
         #100;
@@ -157,7 +154,7 @@ module workload_csv_tb;
         monitor.print_stats();
         exporter.close();
 
-        $display("\n========== FIN SIMULACION ==========");
+        $display("[%0t] [TB] DONE simulacion", $realtime);
         $finish;
 
     end

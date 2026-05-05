@@ -146,14 +146,12 @@ module top_tb;
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
 
-        $display("========================================");
-        $display("SISTEMA MULTICORE COMPLETO");
-        $display("========================================");
+        $display("[%0t] [TB] START demo=SISTEMA_MULTICORE_COMPLETO", $realtime);
 
         // ALTA CONTENCION
         setup_system();
 
-        $display("\n========== ESCENARIO 1: ALTA CONTENCION ==========");
+        $display("[%0t] [TB] SCENARIO start name=ALTA_CONTENCION", $realtime);
 
         foreach (cores[i]) begin
             req = new(PrRd, 32'h1000, i); cores[i].add_request(req);
@@ -166,7 +164,7 @@ module top_tb;
 
         bus.print_metrics();
         mem.print_metrics();
-        $display("CACHE METRICS PER CORE");
+        $display("[%0t] [TB] METRICS cache_per_core", $realtime);
         for (int i = 0; i < NUM_CORES; i++) begin
             caches[i].print_metrics();
         end
@@ -174,7 +172,7 @@ module top_tb;
         // PRODUCTOR - CONSUMIDOR
         setup_system();
 
-        $display("\n========== ESCENARIO 2: PRODUCTOR - CONSUMIDOR ==========");
+        $display("[%0t] [TB] SCENARIO start name=PRODUCTOR_CONSUMIDOR", $realtime);
 
         // PRODUCTORES
         req = new(PrWr, 32'h2000, 0); cores[0].add_request(req);
@@ -193,7 +191,7 @@ module top_tb;
 
         bus.print_metrics();
         mem.print_metrics();
-        $display("CACHE METRICS PER CORE");
+        $display("[%0t] [TB] METRICS cache_per_core", $realtime);
         for (int i = 0; i < NUM_CORES; i++) begin
             caches[i].print_metrics();
         end
@@ -201,7 +199,7 @@ module top_tb;
         // MIGRACION DE OWNERSHIP
         setup_system();
 
-        $display("\n========== ESCENARIO 3: MIGRACION DE OWNERSHIP ==========");
+        $display("[%0t] [TB] SCENARIO start name=MIGRACION_OWNERSHIP", $realtime);
 
         req = new(PrWr, 32'h3000, 0); cores[0].add_request(req);
         req = new(PrWr, 32'h3000, 1); cores[1].add_request(req);
@@ -217,12 +215,12 @@ module top_tb;
 
         bus.print_metrics();
         mem.print_metrics();
-        $display("CACHE METRICS PER CORE");
+        $display("[%0t] [TB] METRICS cache_per_core", $realtime);
         for (int i = 0; i < NUM_CORES; i++) begin
             caches[i].print_metrics();
         end
 
-        $display("\n========== FIN DEMO ==========");
+        $display("[%0t] [TB] DONE demo", $realtime);
         $finish;
 
     end

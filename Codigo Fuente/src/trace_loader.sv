@@ -69,16 +69,18 @@ class TraceLoader;
 
         file = $fopen(file_path, "r");
         if (file == 0) begin
-            $fatal(1, "[TraceLoader] No se puede abrir archivo: %s", file_path);
+            $fatal(1, "[%0t] [TRACE_LOADER] ERROR no se puede abrir archivo: %s",
+                $realtime, file_path);
         end
 
-        $display("[TraceLoader] Cargando traces desde: %s", file_path);
+        $display("[%0t] [TRACE_LOADER] START file=%s", $realtime, file_path);
 
         // Lee encabezado (se ignora)
         line_num = 0;
         r = $fgets(line, file);
         if (r <= 0) begin
-            $fatal(1, "[TraceLoader] Archivo vacío: %s", file_path);
+            $fatal(1, "[%0t] [TRACE_LOADER] ERROR archivo vacio: %s",
+                $realtime, file_path);
         end
         line_num++;
 
@@ -100,14 +102,16 @@ class TraceLoader;
             // Nota: usar %c para 'op' evita que %s consuma la coma.
             r = $sscanf(line, "%d,%d,%c,%s", cycle, core_id, op_char, address_str);
             if (r != 4) begin
-                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 4 campos): %s", line_num, line);
+                $warning("[%0t] [TRACE_LOADER] WARN linea=%0d formato invalido: %s",
+                    $realtime, line_num, line);
                 skipped++;
                 continue;
             end
 
             // Valida core_id
             if (core_id < 0 || core_id >= cores.size()) begin
-                $warning("[TraceLoader] Línea %0d: core_id fuera de rango: %0d", line_num, core_id);
+                $warning("[%0t] [TRACE_LOADER] WARN linea=%0d core_id fuera de rango: %0d",
+                    $realtime, line_num, core_id);
                 skipped++;
                 continue;
             end
@@ -117,7 +121,8 @@ class TraceLoader;
                 "R", "r": op_str = "PrRd";
                 "W", "w": op_str = "PrWr";
                 default: begin
-                    $warning("[TraceLoader] Línea %0d: operación inválida: %s", line_num, op_char);
+                    $warning("[%0t] [TRACE_LOADER] WARN linea=%0d operacion invalida: %s",
+                        $realtime, line_num, op_char);
                     skipped++;
                     continue;
                 end
@@ -129,7 +134,8 @@ class TraceLoader;
                 address_clean = address_clean.substr(2, address_clean.len()-1);
             end
             if ($sscanf(address_clean, "%h", address) != 1) begin
-                $warning("[TraceLoader] Línea %0d: dirección inválida: %s", line_num, address_str);
+                $warning("[%0t] [TRACE_LOADER] WARN linea=%0d direccion invalida: %s",
+                    $realtime, line_num, address_str);
                 skipped++;
                 continue;
             end
@@ -147,11 +153,11 @@ class TraceLoader;
 
         $fclose(file);
 
-        $display("[TraceLoader] Carga completada: %0d solicitudes cargadas, %0d líneas saltadas, %0d líneas totales procesadas",
-            total_reqs, skipped, line_num - 1);
+        $display("[%0t] [TRACE_LOADER] DONE loaded=%0d skipped=%0d lines=%0d",
+            $realtime, total_reqs, skipped, line_num - 1);
 
         if (total_reqs == 0) begin
-            $warning("[TraceLoader] Advertencia: no se cargaron solicitudes. Verifica el formato del archivo.");
+            $warning("[%0t] [TRACE_LOADER] WARN no se cargaron solicitudes", $realtime);
         end
 
     endtask

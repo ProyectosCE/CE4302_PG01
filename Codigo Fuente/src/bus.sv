@@ -177,20 +177,22 @@ class Bus;
 		this.latency_BusUpd = 0.0;
 
 		if (this.bus_mbx == null) begin
-			$fatal(1, "[Bus] bus_mbx no inicializado");
+			$fatal(1, "[%0t] [BUS] ERROR bus_mbx no inicializado", $realtime);
 		end
 		if (this.num_cores <= 0) begin
-			$fatal(1, "[Bus] num_cores invalido: %0d", this.num_cores);
+			$fatal(1, "[%0t] [BUS] ERROR num_cores invalido: %0d", $realtime, this.num_cores);
 		end
 
 		evt_size = bus_evt_mbx.size();
 		mem_size = mem_mbx.size();
 
 		if (evt_size < this.num_cores) begin
-			$fatal(1, "[Bus] bus_evt_mbx size=%0d, num_cores=%0d", evt_size, this.num_cores);
+			$fatal(1, "[%0t] [BUS] ERROR bus_evt_mbx size=%0d num_cores=%0d",
+				$realtime, evt_size, this.num_cores);
 		end
 		if (mem_size < this.num_cores) begin
-			$fatal(1, "[Bus] mem_mbx size=%0d, num_cores=%0d", mem_size, this.num_cores);
+			$fatal(1, "[%0t] [BUS] ERROR mem_mbx size=%0d num_cores=%0d",
+				$realtime, mem_size, this.num_cores);
 		end
 
 		this.bus_evt_mbx = new[this.num_cores];
@@ -258,12 +260,7 @@ class Bus;
 
 	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
 	function string req_type_name(bus_req_type_e req_type);
-		case (req_type)
-			BusRd:  return "BusRd";
-			BusRdX: return "BusRdX";
-			BusUpd: return "BusUpd";
-			default: return "Unknown";
-		endcase
+		return bus_req_name(req_type);
 	endfunction
 
 
@@ -311,8 +308,8 @@ class Bus;
 			evt_copy.t_broadcast = $realtime;
 			bus_evt_mbx[i].put(evt_copy);
 		end
-		$display("@%0t [BUS] BROADCAST type=%0d addr=%h src=%0d",
-			$realtime, evt.req_type, evt.address, evt.src_core_id);
+		$display("[%0t] [BUS] BROADCAST type=%s addr=%s src=%0d",
+			$realtime, req_type_name(evt.req_type), fmt_addr(evt.address), evt.src_core_id);
 	endtask
 
 
@@ -333,8 +330,8 @@ class Bus;
 			core_id = req.src_core_id;
 
 			if (core_id < 0 || core_id >= num_cores) begin
-				$display("@%0t [BUS] WARN: src_core_id invalido=%0d addr=%h",
-					$realtime, core_id, req.address);
+				$display("[%0t] [BUS] WARN invalid src_core_id=%0d addr=%s",
+					$realtime, core_id, fmt_addr(req.address));
 				continue;
 			end
 
@@ -345,8 +342,9 @@ class Bus;
 			// Marca de encolado para metricas
 
 			// Nota: registro de depuracion
-			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
-				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
+			$display("[%0t] [BUS] [Core %0d] ENQ type=%s addr=%s q=%0d",
+				$realtime, core_id, req_type_name(req.req_type), fmt_addr(req.address),
+				req_queues[core_id].size());
 
 			-> queue_event;
 		end
@@ -380,7 +378,7 @@ class Bus;
 			core_id = get_next_core_rr();
 
 			if (core_id < 0) begin
-				$display("@%0t [BUS] No pending requests, waiting...", $realtime);
+				$display("[%0t] [BUS] IDLE no pending requests", $realtime);
 				@queue_event;
 				continue;
 			end
@@ -403,8 +401,9 @@ class Bus;
 					total_updates++;
 				end
 			endcase
-			$display("@%0t [BUS] GRANT core=%0d type=%0d addr=%h",
-				$realtime, core_id, req.req_type, req.address);
+			$display("[%0t] [BUS] [Core %0d] GRANT id=%0d type=%s addr=%s q_wait=%0f ns q=%0d",
+				$realtime, core_id, grant_id, req_type_name(req.req_type), fmt_addr(req.address),
+				queue_wait, req_queues[core_id].size());
 
 			// #0 permite avanzar procesos concurrentes en el mismo tiempo simulado.
 			#0;
@@ -415,13 +414,14 @@ class Bus;
 			// FIX: illegal comparison (array vs null) replaced with size check.
 			if (bus_evt_ack_mbx.size() != 0) begin
 				if (bus_evt_ack_mbx.size() < num_cores) begin
-					$fatal(1, "[Bus] bus_evt_ack_mbx size=%0d, num_cores=%0d",
-						bus_evt_ack_mbx.size(), num_cores);
+					$fatal(1, "[%0t] [BUS] ERROR bus_evt_ack_mbx size=%0d num_cores=%0d",
+						$realtime, bus_evt_ack_mbx.size(), num_cores);
 				end
 				for (int i = 0; i < num_cores; i++) begin
 					int ack_id;
 					if (bus_evt_ack_mbx[i] == null) begin
-						$fatal(1, "[Bus] bus_evt_ack_mbx[%0d] no inicializado", i);
+						$fatal(1, "[%0t] [BUS] ERROR bus_evt_ack_mbx[%0d] no inicializado",
+							$realtime, i);
 					end
 					bus_evt_ack_mbx[i].get(ack_id);
 				end
@@ -442,8 +442,8 @@ class Bus;
 				total_mem_accesses++;
 				if (bus_to_mem != null) begin
 					bus_to_mem.put(req);
-					$display("@%0t [BUS] FWD to Memory core=%0d type=%s addr=%h",
-						$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
+					$display("[%0t] [BUS] [Core %0d] FWD_MEM type=%s addr=%s",
+						$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address));
 				end else begin
 					mem_resp = new(req.address, core_id);
 					mem_mbx[core_id].put(mem_resp);
@@ -466,8 +466,9 @@ class Bus;
 				BusUpd: latency_BusUpd += total_latency;
 			endcase
 			// Usa t_done local para reportar el tiempo de fin de la transaccion.
-			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
-				t_done, core_id, req.req_type, req.address, latency, bytes);
+			$display("[%0t] [BUS] [Core %0d] DONE type=%s addr=%s bytes=%0d service=%0f ns total=%0f ns",
+				t_done, core_id, req_type_name(req.req_type), fmt_addr(req.address), bytes,
+				service_time, total_latency);
 
 			rr_ptr = (core_id + 1) % num_cores; // Avanza RR para equidad.
 		end
@@ -515,24 +516,25 @@ class Bus;
 		total_time = $realtime - sim_start_time;
 		bandwidth = (total_time > 0.0) ? (total_bytes_transferred / total_time) : 0.0;
 
-		$display(" BUS METRICS");
-		$display("total_requests=%0d total_grants=%0d total_mem_accesses=%0d total_bytes=%0d",
-			total_requests, total_grants, total_mem_accesses, total_bytes_transferred);
-		if (total_requests != total_grants)
-			$display("[WARN] requests != grants");
-		$display("total_invalidations=%0d total_updates=%0d grant_id=%0d",
-			total_invalidations, total_updates, grant_id);
-		$display("per_core stats:");
-		for (int i = 0; i < num_cores; i++) begin
-			$display("  core%0d req=%0d grant=%0d", i, per_core_requests[i], per_core_grants[i]);
+		$display("[%0t] [BUS] METRICS total_requests=%0d total_grants=%0d total_mem_accesses=%0d total_bytes=%0d",
+			$realtime, total_requests, total_grants, total_mem_accesses, total_bytes_transferred);
+		if (total_requests != total_grants) begin
+			$display("[%0t] [BUS] WARN requests != grants", $realtime);
 		end
-		$display("per_type counts: BusRd=%0d BusRdX=%0d BusUpd=%0d",
-			count_BusRd, count_BusRdX, count_BusUpd);
-		$display("avg_queue_wait=%0f ns avg_service=%0f ns avg_total=%0f ns",
-			avg_queue_wait, avg_service_time, avg_total_latency);
-		$display("avg_latency_BusRd=%0f ns avg_latency_BusRdX=%0f ns avg_latency_BusUpd=%0f ns",
-			avg_latency_BusRd, avg_latency_BusRdX, avg_latency_BusUpd);
-		$display("total_time=%0f ns bandwidth=%0f bytes/ns", total_time, bandwidth);
+		$display("[%0t] [BUS] METRICS total_invalidations=%0d total_updates=%0d grant_id=%0d",
+			$realtime, total_invalidations, total_updates, grant_id);
+		for (int i = 0; i < num_cores; i++) begin
+			$display("[%0t] [BUS] METRICS per_core core=%0d req=%0d grant=%0d",
+				$realtime, i, per_core_requests[i], per_core_grants[i]);
+		end
+		$display("[%0t] [BUS] METRICS per_type BusRd=%0d BusRdX=%0d BusUpd=%0d",
+			$realtime, count_BusRd, count_BusRdX, count_BusUpd);
+		$display("[%0t] [BUS] METRICS avg_queue_wait=%0f ns avg_service=%0f ns avg_total=%0f ns",
+			$realtime, avg_queue_wait, avg_service_time, avg_total_latency);
+		$display("[%0t] [BUS] METRICS avg_latency BusRd=%0f ns BusRdX=%0f ns BusUpd=%0f ns",
+			$realtime, avg_latency_BusRd, avg_latency_BusRdX, avg_latency_BusUpd);
+		$display("[%0t] [BUS] METRICS total_time=%0f ns bandwidth=%0f bytes/ns",
+			$realtime, total_time, bandwidth);
 	endfunction
 
 endclass
