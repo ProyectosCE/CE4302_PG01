@@ -199,6 +199,10 @@ package types_pkg;
          * @brief Identificador del core origen
          */
         int src_core_id;
+        /**
+         * @brief Timestamp de broadcast del evento (para filtrar eventos obsoletos).
+         */
+        real t_broadcast;
 
         /**
          * @brief Constructor de BusEvent

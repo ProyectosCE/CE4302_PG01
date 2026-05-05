@@ -173,6 +173,7 @@ class Cache;
             lines[i].valid = 0;
             lines[i].state = Invalid;
             lines[i].tag   = 0;
+            lines[i].last_fill_time = 0.0;
         end
 
         foreach (line_lock[i]) begin
@@ -349,6 +350,10 @@ class Cache;
                 to_bus,
                 from_mem
             );
+
+            if (!valid_line && lines[index].valid) begin
+                lines[index].last_fill_time = $realtime;
+            end
 
             new_state = lines[index].state;
             log_state_change(old_state, new_state, req.address);

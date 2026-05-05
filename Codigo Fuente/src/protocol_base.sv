@@ -25,6 +25,7 @@ typedef struct {
     logic [31:0] tag;
     state_e state;
     bit valid;
+    real last_fill_time;
 } cache_line_t;
 
 

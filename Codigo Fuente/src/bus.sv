@@ -308,6 +308,7 @@ class Bus;
 		for (int i = 0; i < num_cores; i++) begin
 			BusEvent evt_copy;
 			evt_copy = new(evt.req_type, evt.address, evt.src_core_id);
+			evt_copy.t_broadcast = $realtime;
 			bus_evt_mbx[i].put(evt_copy);
 		end
 		$display("@%0t [BUS] BROADCAST type=%0d addr=%h src=%0d",
