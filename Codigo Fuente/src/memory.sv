@@ -16,6 +16,8 @@ import types_pkg::*;
  */
 
 class Memory;
+	/** @brief Latencia fija de memoria (ciclos de 1ns en esta fase). */
+	localparam int MEM_LATENCY_CYCLES = 20;
 
 	/** @brief Mailbox de entrada desde el bus (BusRequest). */
 	BusReq_mbx from_bus;
@@ -82,6 +84,7 @@ class Memory;
 				$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
 
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
+				#MEM_LATENCY_CYCLES;
 				resp = new(req.address, req.src_core_id);
 				to_cache[req.src_core_id].put(resp);
 

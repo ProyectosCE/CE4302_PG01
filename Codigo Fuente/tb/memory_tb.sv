@@ -6,7 +6,8 @@ module memory_tb;
     import model_pkg::*;
 
     localparam int NUM_CORES = 4;
-    localparam time TIMEOUT = 20ns;
+    localparam int MEM_LATENCY_CYCLES = 20;
+    localparam time TIMEOUT = 100ns;
 
     BusReq_mbx bus_mbx;
     MemResp_mbx mem_mbx[NUM_CORES];
@@ -34,15 +35,22 @@ module memory_tb;
         end
     endtask
 
-    task automatic expect_response(int core_id, logic [31:0] addr, string label);
+    task automatic expect_response(int core_id, logic [31:0] addr, time t_start, string label);
         MemResponse resp;
         bit ready;
+        time t_end;
+        time delta;
 
         wait_for_response(core_id, ready);
         if (!ready) begin
             $error("[TB] FAIL %s: timeout waiting for response", label);
         end else begin
             mem_mbx[core_id].get(resp);
+            t_end = $time;
+            delta = t_end - t_start;
+            if (delta < MEM_LATENCY_CYCLES) begin
+                $error("[TB] FAIL %s: latency too small (%0t ns)", label, delta);
+            end
             if (resp.address != addr || resp.dest_core_id != core_id) begin
             $error("[TB] FAIL %s: wrong response addr=%h dest=%0d",
                 label, resp.address, resp.dest_core_id);
@@ -80,9 +88,14 @@ module memory_tb;
     endtask
 
     initial begin
+        // Timing variables for latency measurement
+        time t_start_core0;
+        time t_start_core1;
+        time t_start_core3;
+
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST MEMORY (PHASE 1)");
+        $display(" TEST MEMORY (PHASE 2)");
 
         bus_mbx = new();
         for (int i = 0; i < NUM_CORES; i++) begin
@@ -105,8 +118,9 @@ module memory_tb;
         // Test 1: basic routing (core 0)
         $display("@%0t [TB] TEST 1: basic routing", $realtime);
         drain_mailboxes();
+        t_start_core0 = $time;
         send_req(BusRd, 32'h0000_1000, 0);
-        expect_response(0, 32'h0000_1000, "BusRd core0");
+        expect_response(0, 32'h0000_1000, t_start_core0, "BusRd core0");
         for (int i = 1; i < NUM_CORES; i++) begin
             if (mem_mbx[i].num() != 0) begin
                 $error("[TB] FAIL basic routing: unexpected response in core %0d", i);
@@ -116,10 +130,12 @@ module memory_tb;
         // Test 2: multiple cores
         $display("@%0t [TB] TEST 2: multiple cores", $realtime);
         drain_mailboxes();
+        t_start_core1 = $time;
         send_req(BusRdX, 32'h0000_2000, 1);
+        t_start_core3 = $time;
         send_req(BusRd,  32'h0000_3000, 3);
-        expect_response(1, 32'h0000_2000, "BusRdX core1");
-        expect_response(3, 32'h0000_3000, "BusRd core3");
+        expect_response(1, 32'h0000_2000, t_start_core1, "BusRdX core1");
+        expect_response(3, 32'h0000_3000, t_start_core3, "BusRd core3");
         if (mem_mbx[2].num() != 0) begin
             $error("[TB] FAIL multiple cores: unexpected response in core 2");
         end
