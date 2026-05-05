@@ -51,6 +51,9 @@ class Bus;
 	/** @brief Buzon compartido de entrada desde caches. */
 	BusReq_mbx bus_mbx;
 
+	/** @brief Buzon opcional de solicitudes hacia memoria (BusRequest). */
+	BusReq_mbx bus_to_mem;
+
 	/** @brief Buzones de difusion hacia caches (uno por core). */
 	BusEvt_mbx bus_evt_mbx[];
 
@@ -152,6 +155,7 @@ class Bus;
 		this.num_cores = num_cores;
 		this.rr_ptr = 0;
 		this.bus_bandwidth_bytes_per_ns = 4.0;
+		this.bus_to_mem = null;
 		this.total_requests = 0;
 		this.total_grants = 0;
 		this.total_mem_accesses = 0;
@@ -244,6 +248,17 @@ class Bus;
 			BusRdX: return LINE_SIZE;
 			BusUpd: return UPDATE_SIZE;
 			default: return LINE_SIZE;
+		endcase
+	endfunction
+
+
+	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
+	function string req_type_name(bus_req_type_e req_type);
+		case (req_type)
+			BusRd:  return "BusRd";
+			BusRdX: return "BusRdX";
+			BusUpd: return "BusUpd";
+			default: return "Unknown";
 		endcase
 	endfunction
 
@@ -405,8 +420,14 @@ class Bus;
 			// Respuesta de memoria solo para lecturas.
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
 				total_mem_accesses++;
-				mem_resp = new(req.address, core_id);
-				mem_mbx[core_id].put(mem_resp);
+				if (bus_to_mem != null) begin
+					bus_to_mem.put(req);
+					$display("@%0t [BUS] FWD to Memory core=%0d type=%s addr=%h",
+						$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
+				end else begin
+					mem_resp = new(req.address, core_id);
+					mem_mbx[core_id].put(mem_resp);
+				end
 			end
 
 			// #0 permite a las caches procesar la respuesta en un ciclo delta.
