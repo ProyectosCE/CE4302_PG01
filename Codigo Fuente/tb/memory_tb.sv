@@ -117,12 +117,14 @@ module memory_tb;
         int got_core;
         MemResponse burst_resp;
         bit burst_ready;
+        bit ok_metrics;
         time t_end;
         time delta;
+        time avg_service_time;
 
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST MEMORY (PHASE 3)");
+        $display(" TEST MEMORY (PHASE 4)");
 
         bus_mbx = new();
         for (int i = 0; i < NUM_CORES; i++) begin
@@ -202,6 +204,87 @@ module memory_tb;
                     $display("@%0t [TB] PASS burst FIFO idx=%0d", $realtime, i);
                 end
             end
+        end
+
+        // Test 5: metrics validation
+        $display("@%0t [TB] TEST 5: metrics validation", $realtime);
+        drain_mailboxes();
+        #1;
+
+        // Reset metrics for clean validation
+        mem.total_requests = 0;
+        mem.total_responses = 0;
+        mem.busrd_count = 0;
+        mem.busrdx_count = 0;
+        mem.busupd_count = 0;
+        mem.total_service_time = 0;
+        foreach (mem.responses_per_core[i]) begin
+            mem.responses_per_core[i] = 0;
+        end
+
+        t_start_core0 = $time;
+        send_req(BusRd, 32'h0000_6000, 0);
+        t_start_core1 = $time;
+        send_req(BusRdX, 32'h0000_7000, 1);
+        send_req(BusUpd, 32'h0000_8000, 2);
+        t_start_core3 = $time;
+        send_req(BusRd, 32'h0000_9000, 3);
+
+        expect_response(0, 32'h0000_6000, t_start_core0, "BusRd core0 metrics");
+        expect_response(1, 32'h0000_7000, t_start_core1, "BusRdX core1 metrics");
+        expect_response(3, 32'h0000_9000, t_start_core3, "BusRd core3 metrics");
+
+        mem.print_metrics();
+
+        ok_metrics = 1;
+        if (mem.total_requests != 4) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: total_requests=%0d expected=4", mem.total_requests);
+        end
+        if (mem.total_responses != 3) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: total_responses=%0d expected=3", mem.total_responses);
+        end
+        if (mem.busrd_count != 2) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: busrd_count=%0d expected=2", mem.busrd_count);
+        end
+        if (mem.busrdx_count != 1) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: busrdx_count=%0d expected=1", mem.busrdx_count);
+        end
+        if (mem.busupd_count != 1) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: busupd_count=%0d expected=1", mem.busupd_count);
+        end
+        if (mem.responses_per_core[0] != 1) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: core0 responses=%0d expected=1", mem.responses_per_core[0]);
+        end
+        if (mem.responses_per_core[1] != 1) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: core1 responses=%0d expected=1", mem.responses_per_core[1]);
+        end
+        if (mem.responses_per_core[2] != 0) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: core2 responses=%0d expected=0", mem.responses_per_core[2]);
+        end
+        if (mem.responses_per_core[3] != 1) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: core3 responses=%0d expected=1", mem.responses_per_core[3]);
+        end
+
+        if (mem.total_responses > 0) begin
+            avg_service_time = mem.total_service_time / mem.total_responses;
+            if (avg_service_time < MEM_LATENCY_CYCLES) begin
+                ok_metrics = 0;
+                $error("[TB] FAIL metrics: avg_service_time=%0t expected >= %0d",
+                    avg_service_time, MEM_LATENCY_CYCLES);
+            end
+        end
+
+        if (ok_metrics) begin
+            $display("@%0t [TB] PASS metrics validation", $realtime);
         end
 
         $display("@%0t [TB] ALL TESTS COMPLETE", $realtime);

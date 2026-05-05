@@ -11,7 +11,7 @@ import types_pkg::*;
  * NOTAS:
  *   - Latencia fija
  *   - Cola FIFO interna
- *   - Sin metricas
+ *   - Con metricas basicas
  * ============================================
  */
 
@@ -28,11 +28,33 @@ class Memory;
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
 
+	/** @brief Elemento interno de cola con timestamp de llegada. */
+	typedef struct {
+		BusRequest req;
+		time arrival_time;
+	} mem_req_t;
+
 	/** @brief Cola FIFO interna de solicitudes. */
-	BusRequest req_queue[$];
+	mem_req_t req_queue[$];
 
 	/** @brief Evento para notificar nuevas solicitudes. */
 	event req_available;
+
+	// METRICAS
+	/** @brief Contador total de solicitudes. */
+	int total_requests;
+	/** @brief Contador total de respuestas. */
+	int total_responses;
+	/** @brief Contador de solicitudes BusRd. */
+	int busrd_count;
+	/** @brief Contador de solicitudes BusRdX. */
+	int busrdx_count;
+	/** @brief Contador de solicitudes BusUpd. */
+	int busupd_count;
+	/** @brief Respuestas por core (indice = core_id). */
+	int responses_per_core[];
+	/** @brief Tiempo total de servicio acumulado (end-to-end con espera en cola). */
+	time total_service_time;
 
 	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
 	function string req_type_name(bus_req_type_e req_type);
@@ -54,6 +76,17 @@ class Memory;
 		if (this.num_cores <= 0) begin
 			$fatal(1, "[Memory] num_cores invalido: %0d", this.num_cores);
 		end
+
+		total_requests = 0;
+		total_responses = 0;
+		busrd_count = 0;
+		busrdx_count = 0;
+		busupd_count = 0;
+		total_service_time = 0;
+		responses_per_core = new[num_cores];
+		foreach (responses_per_core[i]) begin
+			responses_per_core[i] = 0;
+		end
 	endfunction
 
 
@@ -62,6 +95,7 @@ class Memory;
 	 */
 	task collector_task();
 		BusRequest req;
+		mem_req_t item;
 
 		forever begin
 			from_bus.get(req);
@@ -70,10 +104,27 @@ class Memory;
 				$fatal(1, "[Memory] src_core_id out of range: %0d", req.src_core_id);
 			end
 
+			total_requests++;
+			case (req.req_type)
+				BusRd:  busrd_count++;
+				BusRdX: busrdx_count++;
+				BusUpd: busupd_count++;
+				default: ;
+			endcase
+
 			$display("@%0t [Memory] RX core=%0d type=%s addr=%h",
 				$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
 
-			req_queue.push_back(req);
+			if (req.req_type == BusUpd) begin
+				$display("@%0t [Memory] IGNORE BusUpd (no memory access)",
+					$realtime);
+				continue;
+			end
+
+			item.req = req;
+			item.arrival_time = $time;
+			req_queue.push_back(item);
+			$display("@%0t [Memory] Queue size = %0d", $realtime, req_queue.size());
 			-> req_available;
 		end
 	endtask
@@ -83,18 +134,28 @@ class Memory;
 	 * @brief Hilo trabajador: procesa solicitudes en FIFO con latencia.
 	 */
 	task worker_task();
+		mem_req_t item;
 		BusRequest req;
 		MemResponse resp;
+		time t_end;
+		time service_time;
 
 		forever begin
 			while (req_queue.size() == 0) begin
 				@req_available;
 			end
 
-			req = req_queue.pop_front();
+			item = req_queue.pop_front();
+			req = item.req;
+			$display("@%0t [Memory] Queue size = %0d", $realtime, req_queue.size());
 
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
 				#MEM_LATENCY_CYCLES;
+				t_end = $time;
+				service_time = t_end - item.arrival_time;
+				total_service_time += service_time;
+				total_responses++;
+				responses_per_core[req.src_core_id]++;
 				resp = new(req.address, req.src_core_id);
 				to_cache[req.src_core_id].put(resp);
 
@@ -102,6 +163,34 @@ class Memory;
 					$realtime, req.src_core_id, req.address);
 			end
 		end
+	endtask
+
+
+	/**
+	 * @brief Imprime las metricas de memoria.
+	 */
+	task print_metrics();
+		time avg_service_time;
+
+		$display("----------------------------------------");
+		$display("[Memory Metrics]");
+		$display("Total requests: %0d", total_requests);
+		$display("Total responses: %0d", total_responses);
+		$display("");
+		$display("BusRd count: %0d", busrd_count);
+		$display("BusRdX count: %0d", busrdx_count);
+		$display("BusUpd count: %0d", busupd_count);
+		$display("");
+		$display("Responses per core:");
+		for (int i = 0; i < responses_per_core.size(); i++) begin
+			$display("Core%0d: %0d", i, responses_per_core[i]);
+		end
+		if (total_responses > 0) begin
+			avg_service_time = total_service_time / total_responses;
+			$display("");
+			$display("Average service time: %0t", avg_service_time);
+		end
+		$display("----------------------------------------");
 	endtask
 
 
