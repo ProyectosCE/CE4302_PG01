@@ -43,7 +43,6 @@ module top_tb;
     CoreResp_mbx cache_to_core [NUM_CORES];
     BusEvt_mbx  bus_evt_mbx   [NUM_CORES];
     MemResp_mbx mem_mbx       [NUM_CORES];
-    BusAck_mbx  bus_ack_mbx   [NUM_CORES];
 
     BusReq_mbx bus_mbx;
     BusReq_mbx bus_to_mem;
@@ -61,7 +60,6 @@ module top_tb;
         foreach (cache_to_core[i]) cache_to_core[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
-        foreach (bus_ack_mbx[i])  bus_ack_mbx[i]  = new();
 
         foreach (cores[i]) begin
             caches[i] = new(i, Cache::MSI);
@@ -75,13 +73,12 @@ module top_tb;
             caches[i].to_bus    = bus_mbx;
             caches[i].from_bus  = bus_evt_mbx[i];
             caches[i].from_mem  = mem_mbx[i];
-            caches[i].snoop_ack = bus_ack_mbx[i];
         end
 
         // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
         bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
         bus.bus_to_mem = bus_to_mem;
-        bus.bus_evt_ack_mbx = bus_ack_mbx;
+        // Optional snoop-ack handshake is disabled in this TB to avoid blocking on acks.
 
         // MEMORIA REAL: punto unico de respuesta.
         mem = new(NUM_CORES);
