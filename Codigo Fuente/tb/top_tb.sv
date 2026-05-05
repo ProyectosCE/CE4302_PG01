@@ -36,6 +36,7 @@ module top_tb;
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
     Bus   bus;
+    Memory mem;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -43,6 +44,7 @@ module top_tb;
     MemResp_mbx mem_mbx       [NUM_CORES];
 
     BusReq_mbx bus_mbx;
+    BusReq_mbx bus_to_mem;
 
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
@@ -51,6 +53,7 @@ module top_tb;
     task setup_system();
 
         bus_mbx = new();
+        bus_to_mem = new();
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
@@ -70,6 +73,15 @@ module top_tb;
 
         // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
         bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
+        bus.bus_to_mem = bus_to_mem;
+
+        // MEMORIA REAL: punto unico de respuesta.
+        mem = new(NUM_CORES);
+        mem.from_bus = bus_to_mem;
+        mem.to_cache = new[NUM_CORES];
+        for (int i = 0; i < NUM_CORES; i++) begin
+            mem.to_cache[i] = mem_mbx[i];
+        end
 
         // CACHES en paralelo
         fork
@@ -79,8 +91,11 @@ module top_tb;
             caches[3].run();
         join_none
 
-        // BUS REAL en ejecución concurrente.
-        bus.run();
+        // BUS y MEMORIA en ejecucion concurrente.
+        fork
+            bus.run();
+            mem.run();
+        join_none
 
         #10;
 
@@ -107,7 +122,7 @@ module top_tb;
         $timeformat(-9, 3, " ns", 10);
 
         $display("========================================");
-        $display("   DEMO 2 - SISTEMA MULTICORE COMPLETO");
+        $display("SISTEMA MULTICORE COMPLETO");
         $display("========================================");
 
         // ALTA CONTENCION
@@ -122,7 +137,14 @@ module top_tb;
         end
 
         run_cores();
-        #100;
+        #200;
+
+        bus.print_metrics();
+        mem.print_metrics();
+        $display("CACHE METRICS PER CORE");
+        for (int i = 0; i < NUM_CORES; i++) begin
+            caches[i].print_metrics();
+        end
 
         // PRODUCTOR - CONSUMIDOR
         setup_system();
@@ -144,6 +166,13 @@ module top_tb;
         run_cores();
         #100;
 
+        bus.print_metrics();
+        mem.print_metrics();
+        $display("CACHE METRICS PER CORE");
+        for (int i = 0; i < NUM_CORES; i++) begin
+            caches[i].print_metrics();
+        end
+
         // MIGRACION DE OWNERSHIP
         setup_system();
 
@@ -160,6 +189,13 @@ module top_tb;
 
         run_cores();
         #100;
+
+        bus.print_metrics();
+        mem.print_metrics();
+        $display("CACHE METRICS PER CORE");
+        for (int i = 0; i < NUM_CORES; i++) begin
+            caches[i].print_metrics();
+        end
 
         $display("\n========== FIN DEMO ==========");
         $finish;

@@ -115,6 +115,21 @@ class Cache;
     cache_line_t lines[NUM_LINES];
 
 
+    // METRICAS
+    /** @brief Total de accesos de lectura (PrRd). */
+    int read_count;
+    /** @brief Total de accesos de escritura (PrWr). */
+    int write_count;
+    /** @brief Total de hits detectados. */
+    int hit_count;
+    /** @brief Total de misses detectados. */
+    int miss_count;
+    /** @brief Total de invalidaciones por snoop. */
+    int invalidation_count;
+    /** @brief Total de transiciones de estado de línea. */
+    int state_transition_count;
+
+
     /**
      * @brief Constructor de la clase Cache.
      * @param cache_id Identificador de la caché (core asociado)
@@ -146,6 +161,13 @@ class Cache;
             lines[i].state = Invalid;
             lines[i].tag   = 0;
         end
+
+        read_count = 0;
+        write_count = 0;
+        hit_count = 0;
+        miss_count = 0;
+        invalidation_count = 0;
+        state_transition_count = 0;
     endfunction
 
 
@@ -167,6 +189,31 @@ class Cache;
     function logic [31:0] get_tag(logic [31:0] addr);
         return addr[31:11];
     endfunction
+
+
+    /**
+     * @brief Convierte el estado de coherencia a un string corto.
+     */
+    function string state_name(state_e state);
+        case (state)
+            Invalid:  return "I";
+            Shared:   return "S";
+            Modified: return "M";
+            default:  return "?";
+        endcase
+    endfunction
+
+
+    /**
+     * @brief Registra transiciones de estado de la línea.
+     */
+    task log_state_change(state_e old_state, state_e new_state, logic [31:0] addr);
+        if (old_state != new_state) begin
+            state_transition_count++;
+            $display("@%0t [Cache %0d] STATE CHANGE: %s -> %s addr=%h",
+                $realtime, cache_id, state_name(old_state), state_name(new_state), addr);
+        end
+    endtask
 
 
     /**
@@ -207,12 +254,63 @@ class Cache;
         CoreRequest req;
         int index;
         logic [31:0] tag;
+        state_e old_state;
+        state_e new_state;
+        bit hit;
+        string action_hint;
+        bit tag_match;
+        bit valid_line;
+        state_e log_state;
 
         forever begin
             from_core.get(req); // Espera solicitud del core
 
             index = get_index(req.address);
             tag   = get_tag(req.address);
+
+            old_state = lines[index].state;
+            tag_match = (lines[index].tag == tag);
+            valid_line = (lines[index].valid && tag_match);
+            log_state = valid_line ? old_state : Invalid;
+            hit = (valid_line && old_state != Invalid);
+
+            if (valid_line && old_state == Modified && !hit) begin
+                $error("[Cache %0d] Invalid MISS: state=M addr=%h", cache_id, req.address);
+            end
+            if (old_state == Invalid && hit) begin
+                $error("[Cache %0d] Invalid HIT: state=I addr=%h", cache_id, req.address);
+            end
+
+            if (valid_line && old_state == Modified) begin
+                $display("@%0t [Cache %0d] ACCESS M addr=%h -> %s",
+                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS");
+            end
+
+            if (req.req_type == PrRd) begin
+                read_count++;
+                action_hint = hit ? "" : " -> BusRd";
+                $display("@%0t [Cache %0d] PrRd %h -> %s (state=%s)%s",
+                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS",
+                    state_name(log_state), action_hint);
+            end else begin
+                write_count++;
+                if (!hit) begin
+                    action_hint = " -> BusRdX";
+                end else if (old_state == Shared) begin
+                    action_hint = (protocol_mode == FIREFLY) ? " -> BusUpd" : " -> BusRdX";
+                end else begin
+                    action_hint = "";
+                end
+                $display("@%0t [Cache %0d] PrWr %h -> %s (state=%s)%s",
+                    $realtime, cache_id, req.address, hit ? "HIT" : "MISS",
+                    state_name(log_state), action_hint);
+            end
+
+            if (hit) begin
+                hit_count++;
+            end else begin
+                miss_count++;
+            end
 
             protocol.handle_core_request(
                 cache_id,
@@ -223,6 +321,9 @@ class Cache;
                 to_bus,
                 from_mem
             );
+
+            new_state = lines[index].state;
+            log_state_change(old_state, new_state, req.address);
         end
     endtask
 
@@ -238,6 +339,8 @@ class Cache;
         BusEvent evt;
         int index;
         logic [31:0] tag;
+        state_e old_state;
+        state_e new_state;
 
         forever begin
             from_bus.get(evt); // Espera evento de bus
@@ -249,6 +352,8 @@ class Cache;
             index = get_index(evt.address);
             tag   = get_tag(evt.address);
 
+            old_state = lines[index].state;
+
             protocol.handle_snoop(
                 cache_id,
                 evt,
@@ -256,7 +361,35 @@ class Cache;
                 tag,
                 lines[index]
             );
+
+            new_state = lines[index].state;
+            if (evt.req_type == BusRdX && old_state != Invalid && new_state == Invalid) begin
+                invalidation_count++;
+            end
+            log_state_change(old_state, new_state, evt.address);
         end
     endtask
+
+
+    /**
+     * @brief Imprime las metricas de la cache.
+     */
+    function void print_metrics();
+        int total_accesses;
+        real hit_rate;
+
+        total_accesses = hit_count + miss_count;
+        hit_rate = (total_accesses > 0) ? (real'(hit_count) / total_accesses) : 0.0;
+
+        $display("[Cache %0d Metrics]", cache_id);
+        $display("Reads: %0d", read_count);
+        $display("Writes: %0d", write_count);
+        $display("Hits: %0d", hit_count);
+        $display("Misses: %0d", miss_count);
+        $display("Hit Rate: %0f", hit_rate);
+        $display("Invalidations: %0d", invalidation_count);
+        $display("State Transitions: %0d", state_transition_count);
+        $display("-------------------------------------------");
+    endfunction
 
 endclass

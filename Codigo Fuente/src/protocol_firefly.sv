@@ -46,13 +46,8 @@ class ProtocolFirefly extends ProtocolBase;
         // HIT
         if (hit) begin
             if (req.req_type == PrRd) begin
-                $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
-                    $realtime, cache_id, req.address, line.state);
             end
             else begin // PrWr
-                $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
-                    $realtime, cache_id, req.address, line.state);
-
                 // Escritura sobre línea compartida: update por BusUpd
                 if (line.state == Shared) begin
                     bus_req = new(BusUpd, req.address, cache_id);
@@ -66,9 +61,6 @@ class ProtocolFirefly extends ProtocolBase;
         // MISS
         else begin
             if (req.req_type == PrRd) begin
-                $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
-                    $realtime, cache_id, req.address);
-
                 bus_req = new(BusRd, req.address, cache_id);
                 to_bus.put(bus_req);
                 from_mem.get(mem_resp);
@@ -78,9 +70,6 @@ class ProtocolFirefly extends ProtocolBase;
                 line.state = Shared;
             end
             else begin // PrWr
-                $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
-                    $realtime, cache_id, req.address);
-
                 bus_req = new(BusRdX, req.address, cache_id);
                 to_bus.put(bus_req);
                 from_mem.get(mem_resp);
@@ -111,18 +100,13 @@ class ProtocolFirefly extends ProtocolBase;
         case (evt.req_type)
             // BusRd
             BusRd: begin
-                if (line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified->Shared (WB)",
-                        $realtime, cache_id);
+                if (line.state == Modified)
                     line.state = Shared;
-                end
             end
 
             // BusRdX
             BusRdX: begin
                 if (line.state == Shared || line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRdX -> -> Invalid",
-                        $realtime, cache_id);
                     line.state = Invalid;
                     line.valid = 0;
                 end
@@ -130,10 +114,6 @@ class ProtocolFirefly extends ProtocolBase;
 
             // BusUpd
             BusUpd: begin
-                if (line.state == Shared) begin
-                    $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece Shared",
-                        $realtime, cache_id);
-                end
             end
         endcase
 
