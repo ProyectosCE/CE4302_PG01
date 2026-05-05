@@ -26,6 +26,16 @@ class Memory;
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
 
+	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
+	function string req_type_name(bus_req_type_e req_type);
+		case (req_type)
+			BusRd:  return "BusRd";
+			BusRdX: return "BusRdX";
+			BusUpd: return "BusUpd";
+			default: return "Unknown";
+		endcase
+	endfunction
+
 	/**
 	 * @brief Constructor.
 	 * @param num_cores Numero de cores del sistema.
@@ -64,8 +74,12 @@ class Memory;
 		forever begin
 			from_bus.get(req);
 
-			$display("@%0t [Memory] RX core=%0d type=%0d addr=%h",
-				$realtime, req.src_core_id, req.req_type, req.address);
+			if (req.src_core_id < 0 || req.src_core_id >= num_cores) begin
+				$fatal(1, "[Memory] src_core_id out of range: %0d", req.src_core_id);
+			end
+
+			$display("@%0t [Memory] RX core=%0d type=%s addr=%h",
+				$realtime, req.src_core_id, req_type_name(req.req_type), req.address);
 
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
 				resp = new(req.address, req.src_core_id);
