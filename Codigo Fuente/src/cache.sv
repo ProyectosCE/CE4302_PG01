@@ -110,9 +110,22 @@ class Cache;
     MemResp_mbx from_mem;
 
     /**
+     * @brief Mailbox para enviar respuestas al core.
+     */
+    CoreResp_mbx to_core;
+
+    /**
+     * @brief Mailbox opcional para acks de snoop hacia el bus.
+     */
+    BusAck_mbx snoop_ack;
+
+    /**
      * @brief Array de líneas de caché (directamente mapeada).
      */
     cache_line_t lines[NUM_LINES];
+
+    /** @brief Semáforos por línea para sincronizar accesos concurrentes. */
+    semaphore line_lock[NUM_LINES];
 
 
     // METRICAS
@@ -160,6 +173,10 @@ class Cache;
             lines[i].valid = 0;
             lines[i].state = Invalid;
             lines[i].tag   = 0;
+        end
+
+        foreach (line_lock[i]) begin
+            line_lock[i] = new(1);
         end
 
         read_count = 0;
@@ -261,12 +278,15 @@ class Cache;
         bit tag_match;
         bit valid_line;
         state_e log_state;
+        CoreResponse core_resp;
 
         forever begin
             from_core.get(req); // Espera solicitud del core
 
             index = get_index(req.address);
             tag   = get_tag(req.address);
+
+            line_lock[index].get(1);
 
             old_state = lines[index].state;
             tag_match = (lines[index].tag == tag);
@@ -280,6 +300,14 @@ class Cache;
             if (old_state == Invalid && hit) begin
                 $error("[Cache %0d] Invalid HIT: state=I addr=%h", cache_id, req.address);
             end
+
+            if (valid_line && old_state == Modified && req.req_type == PrRd && !hit) begin
+                $error("[Cache %0d] PrRd invalido: state=M sin HIT addr=%h",
+                    cache_id, req.address);
+            end
+
+            $display("@%0t [Cache %0d] STATE BEFORE addr=%h state=%s tag_match=%0d",
+                $realtime, cache_id, req.address, state_name(log_state), tag_match);
 
             if (valid_line && old_state == Modified) begin
                 $display("@%0t [Cache %0d] ACCESS M addr=%h -> %s",
@@ -324,6 +352,17 @@ class Cache;
 
             new_state = lines[index].state;
             log_state_change(old_state, new_state, req.address);
+
+            $display("@%0t [Cache %0d] STATE AFTER addr=%h state=%s",
+                $realtime, cache_id, req.address, state_name(new_state));
+
+            // FIX: respuesta al core (bloqueo hasta completar solicitud).
+            if (to_core != null) begin
+                core_resp = new(req.req_type, req.address, cache_id);
+                to_core.put(core_resp);
+            end
+
+            line_lock[index].put(1);
         end
     endtask
 
@@ -345,12 +384,20 @@ class Cache;
         forever begin
             from_bus.get(evt); // Espera evento de bus
 
+            // FIX: ack temprano para evitar interbloqueos por line_lock.
+            if (snoop_ack != null) begin
+                snoop_ack.put(cache_id);
+            end
+
             // Ignora eventos generados por sí mismo
-            if (evt.src_core_id == cache_id)
+            if (evt.src_core_id == cache_id) begin
                 continue;
+            end
 
             index = get_index(evt.address);
             tag   = get_tag(evt.address);
+
+            line_lock[index].get(1);
 
             old_state = lines[index].state;
 
@@ -367,6 +414,8 @@ class Cache;
                 invalidation_count++;
             end
             log_state_change(old_state, new_state, evt.address);
+
+            line_lock[index].put(1);
         end
     endtask
 

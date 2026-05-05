@@ -60,6 +60,9 @@ class Bus;
 	/** @brief Buzones de respuesta desde memoria hacia caches (uno por core). */
 	MemResp_mbx mem_mbx[];
 
+	/** @brief Buzones de ack desde caches para sincronizar broadcasts (opcional). */
+	BusAck_mbx bus_evt_ack_mbx[];
+
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
 
@@ -192,6 +195,7 @@ class Bus;
 
 		this.bus_evt_mbx = new[this.num_cores];
 		this.mem_mbx = new[this.num_cores];
+		this.bus_evt_ack_mbx = null;
 		this.req_queues = new[this.num_cores];
 		this.per_core_requests = new[this.num_cores];
 		this.per_core_grants = new[this.num_cores];
@@ -407,6 +411,21 @@ class Bus;
 			evt = create_bus_event(req);
 			// Difusion previa a la latencia para habilitar observacion de coherencia.
 			broadcast_event(evt);
+			// FIX: illegal comparison (array vs null) replaced with size check.
+			if (bus_evt_ack_mbx.size() != 0) begin
+				if (bus_evt_ack_mbx.size() < num_cores) begin
+					$fatal(1, "[Bus] bus_evt_ack_mbx size=%0d, num_cores=%0d",
+						bus_evt_ack_mbx.size(), num_cores);
+				end
+				for (int i = 0; i < num_cores; i++) begin
+					int ack_id;
+					if (bus_evt_ack_mbx[i] == null) begin
+						$fatal(1, "[Bus] bus_evt_ack_mbx[%0d] no inicializado", i);
+					end
+					bus_evt_ack_mbx[i].get(ack_id);
+				end
+				#0;
+			end
 			// #0 deja reaccionar a caches en un ciclo delta.
 			#0;
 

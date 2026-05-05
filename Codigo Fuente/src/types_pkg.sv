@@ -96,6 +96,43 @@ package types_pkg;
 
     /**
      * ============================================
+     * CLASE: CoreResponse
+     * DESCRIPCIÓN:
+     *   Representa la respuesta de la caché al core al completar una solicitud.
+     *   Incluye el tipo de operación, la dirección y el core destino.
+     * ============================================
+     */
+    class CoreResponse;
+        /** @brief Tipo de solicitud completada. */
+        core_req_type_e req_type;
+        /** @brief Dirección de memoria completada. */
+        logic [31:0] address;
+        /** @brief Identificador del core destino. */
+        int dest_core_id;
+
+        /**
+         * @brief Constructor de CoreResponse
+         * @param req_type Tipo de solicitud completada
+         * @param address Dirección de memoria completada
+         * @param dest_core_id Core destino
+         */
+        function new(core_req_type_e req_type, logic [31:0] address, int dest_core_id);
+            this.req_type = req_type;
+            this.address = address;
+            this.dest_core_id = dest_core_id;
+        endfunction
+
+        /**
+         * @brief Imprime la respuesta por consola (debug)
+         */
+        function void print();
+            $display("[CoreResponse] type=%0d addr=%h core=%0d", req_type, address, dest_core_id);
+        endfunction
+    endclass
+
+
+    /**
+     * ============================================
      * CLASE: BusRequest
      * DESCRIPCIÓN:
      *   Representa una solicitud enviada al bus por una caché.
@@ -228,6 +265,10 @@ package types_pkg;
      */
     typedef mailbox #(CoreRequest) CoreReq_mbx;
     /**
+     * @brief Mailbox para respuestas de la caché al core.
+     */
+    typedef mailbox #(CoreResponse) CoreResp_mbx;
+    /**
      * @brief Mailbox para solicitudes de la caché al bus.
      */
     typedef mailbox #(BusRequest)  BusReq_mbx;
@@ -239,5 +280,9 @@ package types_pkg;
      * @brief Mailbox para respuestas de memoria.
      */
     typedef mailbox #(MemResponse) MemResp_mbx;
+    /**
+     * @brief Mailbox para sincronizar acks de snoop hacia el bus.
+     */
+    typedef mailbox #(int) BusAck_mbx;
 
 endpackage

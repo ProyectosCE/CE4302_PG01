@@ -29,6 +29,7 @@ module core_tb;
     Core core;
 
     CoreReq_mbx core_to_cache_mbx;
+    CoreResp_mbx cache_to_core_mbx;
 
     initial begin
         CoreRequest req;
@@ -42,10 +43,12 @@ module core_tb;
 
         // mailbox para comunicación core-cache
         core_to_cache_mbx = new();
+        cache_to_core_mbx = new();
 
         // crear core y asociar mailbox
         core = new(0);
         core.to_cache = core_to_cache_mbx;
+        core.from_cache = cache_to_core_mbx;
 
         // cargar "programa" (trace de solicitudes)
         req = new(PrRd, 32'h1000, 0); core.add_request(req);
@@ -60,6 +63,7 @@ module core_tb;
             // "dummy cache": solo imprime lo que recibe del core
             forever begin
                 CoreRequest rcv;
+                CoreResponse resp;
                 core_to_cache_mbx.get(rcv);
 
                 $display("@%0t [DUMMY CACHE] Recibido %s addr=%h core=%0d",
@@ -67,6 +71,10 @@ module core_tb;
                     (rcv.req_type == PrRd) ? "PrRd" : "PrWr",
                     rcv.address,
                     rcv.src_core_id);
+
+                // Respuesta inmediata para desbloquear el core.
+                resp = new(rcv.req_type, rcv.address, rcv.src_core_id);
+                cache_to_core_mbx.put(resp);
             end
 
         join_none

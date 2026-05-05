@@ -40,8 +40,10 @@ module top_tb;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
+    CoreResp_mbx cache_to_core [NUM_CORES];
     BusEvt_mbx  bus_evt_mbx   [NUM_CORES];
     MemResp_mbx mem_mbx       [NUM_CORES];
+    BusAck_mbx  bus_ack_mbx   [NUM_CORES];
 
     BusReq_mbx bus_mbx;
     BusReq_mbx bus_to_mem;
@@ -56,24 +58,30 @@ module top_tb;
         bus_to_mem = new();
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
+        foreach (cache_to_core[i]) cache_to_core[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
+        foreach (bus_ack_mbx[i])  bus_ack_mbx[i]  = new();
 
         foreach (cores[i]) begin
             caches[i] = new(i, Cache::MSI);
             cores[i]  = new(i);
 
             cores[i].to_cache = core_to_cache[i];
+            cores[i].from_cache = cache_to_core[i];
 
             caches[i].from_core = core_to_cache[i];
+            caches[i].to_core   = cache_to_core[i];
             caches[i].to_bus    = bus_mbx;
             caches[i].from_bus  = bus_evt_mbx[i];
             caches[i].from_mem  = mem_mbx[i];
+            caches[i].snoop_ack = bus_ack_mbx[i];
         end
 
         // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
         bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
         bus.bus_to_mem = bus_to_mem;
+        bus.bus_evt_ack_mbx = bus_ack_mbx;
 
         // MEMORIA REAL: punto unico de respuesta.
         mem = new(NUM_CORES);
@@ -113,6 +121,26 @@ module top_tb;
         join
     endtask
 
+
+    /**
+     * @brief Espera a que memoria procese todas las solicitudes pendientes.
+     */
+    task wait_for_memory_idle();
+        wait (mem.req_mbx.num() == 0);
+        #1;
+        wait (mem.total_requests == mem.total_responses);
+    endtask
+
+    /**
+     * @brief Espera a que el bus y la memoria queden sin solicitudes pendientes.
+     */
+    task wait_for_system_idle();
+        wait (bus_mbx.num() == 0);
+        wait (!bus.has_pending_requests());
+        wait_for_memory_idle();
+        #1;
+    endtask
+
     // TEST
     initial begin
 
@@ -137,7 +165,7 @@ module top_tb;
         end
 
         run_cores();
-        #200;
+        wait_for_system_idle();
 
         bus.print_metrics();
         mem.print_metrics();
@@ -164,7 +192,7 @@ module top_tb;
         req = new(PrRd, 32'h2000, 2); cores[2].add_request(req);
 
         run_cores();
-        #100;
+        wait_for_system_idle();
 
         bus.print_metrics();
         mem.print_metrics();
@@ -188,7 +216,7 @@ module top_tb;
         req = new(PrWr, 32'h3000, 1); cores[1].add_request(req);
 
         run_cores();
-        #100;
+        wait_for_system_idle();
 
         bus.print_metrics();
         mem.print_metrics();

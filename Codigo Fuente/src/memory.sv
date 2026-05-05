@@ -35,11 +35,8 @@ class Memory;
 		time arrival_time;
 	} mem_req_t;
 
-	/** @brief Cola FIFO interna de solicitudes. */
-	mem_req_t req_queue[$];
-
-	/** @brief Evento para notificar nuevas solicitudes. */
-	event req_available;
+	/** @brief Cola FIFO interna de solicitudes (mailbox bloqueante). */
+	mailbox #(mem_req_t) req_mbx;
 
 	// METRICAS
 	/** @brief Contador total de solicitudes. */
@@ -96,6 +93,7 @@ class Memory;
 		busupd_count = 0;
 		writeback_count = 0;
 		total_service_time = 0;
+		req_mbx = new();
 		responses_per_core = new[num_cores];
 		foreach (responses_per_core[i]) begin
 			responses_per_core[i] = 0;
@@ -117,11 +115,18 @@ class Memory;
 				$fatal(1, "[Memory] src_core_id out of range: %0d", req.src_core_id);
 			end
 
-			total_requests++;
 			case (req.req_type)
-				BusRd:  busrd_count++;
-				BusRdX: busrdx_count++;
-				BusUpd: busupd_count++;
+				BusRd: begin
+					total_requests++;
+					busrd_count++;
+				end
+				BusRdX: begin
+					total_requests++;
+					busrdx_count++;
+				end
+				BusUpd: begin
+					busupd_count++;
+				end
 				default: ;
 			endcase
 
@@ -136,9 +141,9 @@ class Memory;
 
 			item.req = req;
 			item.arrival_time = $time;
-			req_queue.push_back(item);
-			$display("@%0t [Memory] Queue size = %0d", $realtime, req_queue.size());
-			-> req_available;
+			req_mbx.put(item);
+			$display("@%0t [Memory] ENQ core=%0d type=%s addr=%h (q=%0d)",
+				$realtime, req.src_core_id, req_type_name(req.req_type), req.address, req_mbx.num());
 		end
 	endtask
 
@@ -154,13 +159,10 @@ class Memory;
 		time service_time;
 
 		forever begin
-			while (req_queue.size() == 0) begin
-				@req_available;
-			end
-
-			item = req_queue.pop_front();
+			req_mbx.get(item);
 			req = item.req;
-			$display("@%0t [Memory] Queue size = %0d", $realtime, req_queue.size());
+			$display("@%0t [Memory] DEQ core=%0d type=%s addr=%h (q=%0d)",
+				$realtime, req.src_core_id, req_type_name(req.req_type), req.address, req_mbx.num());
 
 			if (is_writeback(req)) begin
 				handle_writeback(req);
@@ -217,6 +219,10 @@ class Memory;
 			avg_service_time = total_service_time / total_responses;
 			$display("");
 			$display("Average service time: %0t", avg_service_time);
+		end
+		if (total_requests != total_responses) begin
+			$error("[Memory] total_requests != total_responses (%0d != %0d)",
+				total_requests, total_responses);
 		end
 		$display("----------------------------------------");
 	endtask

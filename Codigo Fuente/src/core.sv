@@ -61,6 +61,11 @@ class Core;
      */
     CoreReq_mbx to_cache;
 
+    /**
+     * @brief Mailbox para recibir respuestas desde la caché.
+     */
+    CoreResp_mbx from_cache;
+
 
     /**
      * @brief Cola de solicitudes (trace) que el core enviará a la caché.
@@ -97,12 +102,16 @@ class Core;
         if (to_cache == null) begin
             $fatal(1, "[Core %0d] Mailbox to_cache no inicializado", core_id);
         end
+        if (from_cache == null) begin
+            $fatal(1, "[Core %0d] Mailbox from_cache no inicializado", core_id);
+        end
 
         $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",
             $realtime, core_id, trace_queue.size());
 
         foreach (trace_queue[i]) begin
             CoreRequest req = trace_queue[i];
+            CoreResponse resp;
 
             $display("@%0t [Core %0d] Enviando %s addr=%h",
                 $realtime, core_id,
@@ -110,6 +119,9 @@ class Core;
                 req.address);
 
             to_cache.put(req);
+
+            // FIX: core blocking hasta completar la solicitud.
+            from_cache.get(resp);
 
             #10; // delay entre instrucciones (simulación)
         end
