@@ -12,6 +12,7 @@ import types_pkg::*;
  *   - Latencia fija
  *   - Cola FIFO interna
  *   - Con metricas basicas
+ *   - Scaffolding de write-back (no implementado aun)
  * ============================================
  */
 
@@ -51,6 +52,8 @@ class Memory;
 	int busrdx_count;
 	/** @brief Contador de solicitudes BusUpd. */
 	int busupd_count;
+	/** @brief Contador de write-backs observados (stub). */
+	int writeback_count;
 	/** @brief Respuestas por core (indice = core_id). */
 	int responses_per_core[];
 	/** @brief Tiempo total de servicio acumulado (end-to-end con espera en cola). */
@@ -64,6 +67,15 @@ class Memory;
 			BusUpd: return "BusUpd";
 			default: return "Unknown";
 		endcase
+	endfunction
+
+	/**
+	 * @brief Indica si una solicitud corresponde a un write-back.
+	 * @details
+	 *   TODO: Extender BusRequest con tipo de write-back en fases futuras.
+	 */
+	function bit is_writeback(BusRequest req);
+		return 0;
 	endfunction
 
 	/**
@@ -82,6 +94,7 @@ class Memory;
 		busrd_count = 0;
 		busrdx_count = 0;
 		busupd_count = 0;
+		writeback_count = 0;
 		total_service_time = 0;
 		responses_per_core = new[num_cores];
 		foreach (responses_per_core[i]) begin
@@ -149,6 +162,11 @@ class Memory;
 			req = item.req;
 			$display("@%0t [Memory] Queue size = %0d", $realtime, req_queue.size());
 
+			if (is_writeback(req)) begin
+				handle_writeback(req);
+				continue;
+			end
+
 			if (req.req_type == BusRd || req.req_type == BusRdX) begin
 				#MEM_LATENCY_CYCLES;
 				t_end = $time;
@@ -163,6 +181,16 @@ class Memory;
 					$realtime, req.src_core_id, req.address);
 			end
 		end
+	endtask
+
+
+	/**
+	 * @brief Manejo de write-back (stub para fases futuras).
+	 */
+	task handle_writeback(BusRequest req);
+		writeback_count++;
+		$display("@%0t [Memory] WB stub core=%0d addr=%h",
+			$realtime, req.src_core_id, req.address);
 	endtask
 
 

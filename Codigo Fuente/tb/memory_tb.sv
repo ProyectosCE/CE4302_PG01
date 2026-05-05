@@ -124,7 +124,7 @@ module memory_tb;
 
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST MEMORY (PHASE 4)");
+        $display(" TEST MEMORY (PHASE 5)");
 
         bus_mbx = new();
         for (int i = 0; i < NUM_CORES; i++) begin
@@ -217,6 +217,7 @@ module memory_tb;
         mem.busrd_count = 0;
         mem.busrdx_count = 0;
         mem.busupd_count = 0;
+        mem.writeback_count = 0;
         mem.total_service_time = 0;
         foreach (mem.responses_per_core[i]) begin
             mem.responses_per_core[i] = 0;
@@ -256,6 +257,11 @@ module memory_tb;
         if (mem.busupd_count != 1) begin
             ok_metrics = 0;
             $error("[TB] FAIL metrics: busupd_count=%0d expected=1", mem.busupd_count);
+        end
+        // Scaffolding check: no write-backs should be triggered yet.
+        if (mem.writeback_count != 0) begin
+            ok_metrics = 0;
+            $error("[TB] FAIL metrics: writeback_count=%0d expected=0", mem.writeback_count);
         end
         if (mem.responses_per_core[0] != 1) begin
             ok_metrics = 0;
