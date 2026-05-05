@@ -35,6 +35,25 @@ module memory_tb;
         end
     endtask
 
+    task automatic wait_for_any_response(output int core_id, output MemResponse resp, output bit ready);
+        time waited;
+        ready = 0;
+        waited = 0;
+
+        while (waited < TIMEOUT) begin
+            for (int i = 0; i < NUM_CORES; i++) begin
+                if (mem_mbx[i].num() != 0) begin
+                    core_id = i;
+                    mem_mbx[i].get(resp);
+                    ready = 1;
+                    return;
+                end
+            end
+            #1;
+            waited += 1ns;
+        end
+    endtask
+
     task automatic expect_response(int core_id, logic [31:0] addr, time t_start, string label);
         MemResponse resp;
         bit ready;
@@ -92,10 +111,18 @@ module memory_tb;
         time t_start_core0;
         time t_start_core1;
         time t_start_core3;
+        time t_start_burst[3];
+        logic [31:0] burst_addr[3];
+        int burst_core[3];
+        int got_core;
+        MemResponse burst_resp;
+        bit burst_ready;
+        time t_end;
+        time delta;
 
         $timeformat(-9, 3, " ns", 10);
 
-        $display(" TEST MEMORY (PHASE 2)");
+        $display(" TEST MEMORY (PHASE 3)");
 
         bus_mbx = new();
         for (int i = 0; i < NUM_CORES; i++) begin
@@ -145,6 +172,37 @@ module memory_tb;
         drain_mailboxes();
         send_req(BusUpd, 32'h0000_4000, 2);
         expect_no_response_all("BusUpd ignored");
+
+        // Test 4: burst requests (FIFO order)
+        $display("@%0t [TB] TEST 4: burst requests FIFO", $realtime);
+        drain_mailboxes();
+        burst_addr[0] = 32'h0000_5000; burst_core[0] = 0; t_start_burst[0] = $time;
+        send_req(BusRd, burst_addr[0], burst_core[0]);
+        burst_addr[1] = 32'h0000_5040; burst_core[1] = 1; t_start_burst[1] = $time;
+        send_req(BusRdX, burst_addr[1], burst_core[1]);
+        burst_addr[2] = 32'h0000_5080; burst_core[2] = 2; t_start_burst[2] = $time;
+        send_req(BusRd, burst_addr[2], burst_core[2]);
+
+        for (int i = 0; i < 3; i++) begin
+            wait_for_any_response(got_core, burst_resp, burst_ready);
+            if (!burst_ready) begin
+                $error("[TB] FAIL burst FIFO: timeout waiting for response %0d", i);
+            end else begin
+                t_end = $time;
+                delta = t_end - t_start_burst[i];
+                if (delta < MEM_LATENCY_CYCLES) begin
+                    $error("[TB] FAIL burst FIFO: latency too small (%0t ns)", delta);
+                end
+                if (got_core != burst_core[i] ||
+                    burst_resp.dest_core_id != burst_core[i] ||
+                    burst_resp.address != burst_addr[i]) begin
+                    $error("[TB] FAIL burst FIFO: expected core=%0d addr=%h got core=%0d addr=%h",
+                        burst_core[i], burst_addr[i], got_core, burst_resp.address);
+                end else begin
+                    $display("@%0t [TB] PASS burst FIFO idx=%0d", $realtime, i);
+                end
+            end
+        end
 
         $display("@%0t [TB] ALL TESTS COMPLETE", $realtime);
         #10;
