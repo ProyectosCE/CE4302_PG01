@@ -50,10 +50,20 @@ package types_pkg;
         BusUpd   ///< Actualización (Firefly)
     } bus_req_type_e;
 
+    /**
+     * @brief Formatea una direccion de 32 bits en hexadecimal con prefijo 0x.
+     * @param addr Direccion a formatear.
+     * @return Cadena con formato 0x%08h.
+     */
     function automatic string fmt_addr(logic [31:0] addr);
         return $sformatf("0x%08h", addr);
     endfunction
 
+    /**
+     * @brief Devuelve el nombre legible de un tipo de solicitud de core.
+     * @param req_type Tipo de solicitud (PrRd o PrWr).
+     * @return Cadena con el nombre simbolico del tipo.
+     */
     function automatic string core_req_name(core_req_type_e req_type);
         case (req_type)
             PrRd:   return "PrRd";
@@ -62,6 +72,11 @@ package types_pkg;
         endcase
     endfunction
 
+    /**
+     * @brief Devuelve el nombre legible de un tipo de solicitud de bus.
+     * @param req_type Tipo de solicitud (BusRd, BusRdX, BusUpd).
+     * @return Cadena con el nombre simbolico del tipo.
+     */
     function automatic string bus_req_name(bus_req_type_e req_type);
         case (req_type)
             BusRd:  return "BusRd";
@@ -71,6 +86,11 @@ package types_pkg;
         endcase
     endfunction
 
+    /**
+     * @brief Construye una etiqueta legible para un core.
+     * @param core_id Identificador del core.
+     * @return Cadena con el formato "Core N".
+     */
     function automatic string core_tag(int core_id);
         return $sformatf("Core %0d", core_id);
     endfunction
