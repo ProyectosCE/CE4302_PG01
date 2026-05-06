@@ -20,6 +20,9 @@ class Memory;
 	/** @brief Latencia fija de memoria (ciclos de 1ns en esta fase). */
 	localparam int MEM_LATENCY_CYCLES = 20;
 
+	/** @brief Profundidad maxima del buzon interno de solicitudes (backpressure). */
+	localparam int MEM_MBX_DEPTH = 8;
+
 	/** @brief Mailbox de entrada desde el bus (BusRequest). */
 	BusReq_mbx from_bus;
 
@@ -55,6 +58,8 @@ class Memory;
 	int responses_per_core[];
 	/** @brief Tiempo total de servicio acumulado (end-to-end con espera en cola). */
 	time total_service_time;
+	/** @brief Contador de solicitudes rechazadas por falta de capacidad. */
+	int rejected_requests;
 
 	/** @brief Devuelve un nombre legible para el tipo de solicitud. */
 	function string req_type_name(bus_req_type_e req_type);
@@ -88,6 +93,7 @@ class Memory;
 		busupd_count = 0;
 		writeback_count = 0;
 		total_service_time = 0;
+		rejected_requests = 0;
 		req_mbx = new();
 		responses_per_core = new[num_cores];
 		foreach (responses_per_core[i]) begin
@@ -97,14 +103,30 @@ class Memory;
 
 
 	/**
+	 * @brief Verifica si la memoria tiene capacidad para aceptar una nueva solicitud.
+	 * @return 1 si hay espacio, 0 si se alcanzó el límite de profundidad.
+	 */
+	function bit has_capacity();
+		return (req_mbx.num() < MEM_MBX_DEPTH);
+	endfunction
+
+	/**
 	 * @brief Hilo recolector: recibe solicitudes y las encola.
 	 */
 	task collector_task();
 		BusRequest req;
 		mem_req_t item;
+		bit got_req;
 
 		forever begin
-			from_bus.get(req);
+			// Intenta obtener solicitud sin bloquearse indefinidamente.
+			got_req = from_bus.try_get(req);
+			
+			if (!got_req) begin
+				// No hay solicitudes disponibles; espera.
+				#1;
+				continue;
+			end
 
 			if (req.src_core_id < 0 || req.src_core_id >= num_cores) begin
 				$fatal(1, "[%0t] [MEM] ERROR src_core_id out of range: %0d",
@@ -135,12 +157,23 @@ class Memory;
 				continue;
 			end
 
+			// Verificar capacidad: backpressure.
+			if (!has_capacity()) begin
+				rejected_requests++;
+				$display("[%0t] [MEM] [Core %0d] REJECT type=%s addr=%s (capacity full q=%0d/%0d)",
+					$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address),
+					req_mbx.num(), MEM_MBX_DEPTH);
+				// En un sistema real, devolveríamos un NACK al bus.
+				// Por simplicidad, rechazamos y el remitente debe reintentar.
+				continue;
+			end
+
 			item.req = req;
 			item.arrival_time = $time;
 			req_mbx.put(item);
-			$display("[%0t] [MEM] [Core %0d] ENQ type=%s addr=%s q=%0d",
+			$display("[%0t] [MEM] [Core %0d] ENQ type=%s addr=%s q=%0d/%0d",
 				$realtime, req.src_core_id, req_type_name(req.req_type), fmt_addr(req.address),
-				req_mbx.num());
+				req_mbx.num(), MEM_MBX_DEPTH);
 		end
 	endtask
 
@@ -200,8 +233,8 @@ class Memory;
 	task print_metrics();
 		time avg_service_time;
 
-		$display("[%0t] [MEM] METRICS total_requests=%0d total_responses=%0d",
-			$realtime, total_requests, total_responses);
+		$display("[%0t] [MEM] METRICS total_requests=%0d total_responses=%0d rejected=%0d",
+			$realtime, total_requests, total_responses, rejected_requests);
 		$display("[%0t] [MEM] METRICS BusRd=%0d BusRdX=%0d BusUpd=%0d",
 			$realtime, busrd_count, busrdx_count, busupd_count);
 		for (int i = 0; i < responses_per_core.size(); i++) begin

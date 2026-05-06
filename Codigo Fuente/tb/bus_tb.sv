@@ -34,7 +34,12 @@ module bus_tb;
 	task automatic send_request(int core_id, bus_req_type_e req_type, logic [31:0] address);
 		BusRequest req;
 		req = new(req_type, address, core_id);
-		bus_mbx.put(req);
+		
+		// Con backpressure, el remitente debe reintentar si el bus está lleno.
+		while (!bus_mbx.try_put(req)) begin
+			#1;  // Espera un ciclo e intenta de nuevo.
+		end
+		
 		sent_count[core_id]++;
 		total_sent++;
 		// Cada solicitud genera una difusion a todos los cores.
@@ -323,6 +328,12 @@ module bus_tb;
 				$realtime, bus.total_grants, total_sent);
 		else
 			$display("[%0t] [TB] OK total_grants coincide con total_sent", $realtime);
+
+		// Validación de backpressure: si ocurrieron rechazos, es indicio de que la profundidad de BUS_MBX_DEPTH fue excedida.
+		if (bus.rejected_requests > 0) begin
+			$display("[%0t] [TB] INFO backpressure detected: %0d requests rejected due to capacity",
+				$realtime, bus.rejected_requests);
+		end
 
 		if (total_sent < 0 || total_evt_received < 0 || total_mem_received < 0)
 			$error("[%0t] [TB] ERROR contadores negativos detectados", $realtime);

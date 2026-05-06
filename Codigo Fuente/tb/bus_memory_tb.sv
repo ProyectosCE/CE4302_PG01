@@ -26,7 +26,11 @@ module bus_memory_tb;
     task automatic send_req(bus_req_type_e req_type, logic [31:0] addr, int core_id);
         BusRequest req;
         req = new(req_type, addr, core_id);
-        bus_mbx.put(req);
+        
+        // Con backpressure, reintentar si el bus está lleno.
+        while (!bus_mbx.try_put(req)) begin
+            #1;
+        end
     endtask
 
     task automatic wait_for_response(int core_id, output bit ready);
@@ -209,6 +213,13 @@ module bus_memory_tb;
         end
 
         $display("[%0t] [TB] DONE all_tests", $realtime);
+        
+        // Resumen de backpressure events si ocurrieron.
+        if (bus.rejected_requests > 0 || mem.rejected_requests > 0) begin
+            $display("[%0t] [TB] INFO backpressure detected: bus_rejected=%0d mem_rejected=%0d",
+                $realtime, bus.rejected_requests, mem.rejected_requests);
+        end
+        
         #10;
         $finish;
     end

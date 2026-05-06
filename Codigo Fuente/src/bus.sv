@@ -78,6 +78,12 @@ class Bus;
 	/** @brief Abstraccion temporal: ancho de banda efectivo en bytes/ns. */
 	real bus_bandwidth_bytes_per_ns;
 
+	/** @brief Profundidad maxima del buzon de solicitudes (backpressure). */
+	localparam int BUS_MBX_DEPTH = 16;
+
+	/** @brief Contador de transacciones rechazadas por falta de capacidad. */
+	int rejected_requests;
+
 	/**
 	 * @brief Colas por core para preservar RR sin alterar el buzon compartido.
 	 *
@@ -175,6 +181,7 @@ class Bus;
 		this.latency_BusRd = 0.0;
 		this.latency_BusRdX = 0.0;
 		this.latency_BusUpd = 0.0;
+		this.rejected_requests = 0;
 
 		if (this.bus_mbx == null) begin
 			$fatal(1, "[%0t] [BUS] ERROR bus_mbx no inicializado", $realtime);
@@ -240,6 +247,20 @@ class Bus;
 			end
 		end
 		return 0;
+	endfunction
+
+
+	/**
+	 * @brief Verifica si el bus tiene capacidad para aceptar una nueva solicitud.
+	 * @return 1 si hay espacio, 0 si se alcanzó el límite de profundidad.
+	 */
+	function bit has_capacity();
+		int total_queued;
+		total_queued = 0;
+		for (int i = 0; i < num_cores; i++) begin
+			total_queued += req_queues[i].size();
+		end
+		return (total_queued < BUS_MBX_DEPTH);
 	endfunction
 
 
@@ -320,18 +341,42 @@ class Bus;
 	 *   Corre en paralelo con el planificador (fork/join_none). Separar la
 	 *   recepcion del arbitraje permite que el bus siga aceptando trafico
 	 *   mientras se ejecuta una transaccion ya concedida.
+	 *   
+	 *   Con backpressure: el buzon se mantiene no bloqueante con try_get(),
+	 *   pero se verifica la capacidad interna para simular limites reales.
 	 */
 	task collector_loop();
 		BusRequest req;
 		int core_id;
+		bit got_req;
 
 		forever begin
-			bus_mbx.get(req);
+			// Intenta obtener solicitud sin bloquearse indefinidamente.
+			// Si hay espacio en el bus, acepta; si no, rechaza (simula backpressure).
+			got_req = bus_mbx.try_get(req);
+			
+			if (!got_req) begin
+				// No hay solicitudes disponibles; espera.
+				#1;
+				continue;
+			end
+			
 			core_id = req.src_core_id;
 
 			if (core_id < 0 || core_id >= num_cores) begin
 				$display("[%0t] [BUS] WARN invalid src_core_id=%0d addr=%s",
 					$realtime, core_id, fmt_addr(req.address));
+				continue;
+			end
+
+			// Verificar capacidad: backpressure.
+			if (!has_capacity()) begin
+				rejected_requests++;
+				$display("[%0t] [BUS] [Core %0d] REJECT type=%s addr=%s (capacity full q=%0d/%0d)",
+					$realtime, core_id, req_type_name(req.req_type), fmt_addr(req.address),
+					0, BUS_MBX_DEPTH);
+				// En un sistema real, devolveríamos un NACK o esperaríamos.
+				// Por simplicidad, rechazamos y el remitente debe reintentar (fuera del alcance del testbench).
 				continue;
 			end
 
@@ -342,9 +387,9 @@ class Bus;
 			// Marca de encolado para metricas
 
 			// Nota: registro de depuracion
-			$display("[%0t] [BUS] [Core %0d] ENQ type=%s addr=%s q=%0d",
+			$display("[%0t] [BUS] [Core %0d] ENQ type=%s addr=%s q=%0d/%0d",
 				$realtime, core_id, req_type_name(req.req_type), fmt_addr(req.address),
-				req_queues[core_id].size());
+				req_queues[core_id].size(), BUS_MBX_DEPTH);
 
 			-> queue_event;
 		end
@@ -521,8 +566,8 @@ class Bus;
 		if (total_requests != total_grants) begin
 			$display("[%0t] [BUS] WARN requests != grants", $realtime);
 		end
-		$display("[%0t] [BUS] METRICS total_invalidations=%0d total_updates=%0d grant_id=%0d",
-			$realtime, total_invalidations, total_updates, grant_id);
+		$display("[%0t] [BUS] METRICS total_invalidations=%0d total_updates=%0d grant_id=%0d rejected=%0d",
+			$realtime, total_invalidations, total_updates, grant_id, rejected_requests);
 		for (int i = 0; i < num_cores; i++) begin
 			$display("[%0t] [BUS] METRICS per_core core=%0d req=%0d grant=%0d",
 				$realtime, i, per_core_requests[i], per_core_grants[i]);

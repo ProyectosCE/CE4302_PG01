@@ -17,7 +17,11 @@ module memory_tb;
     task automatic send_req(bus_req_type_e req_type, logic [31:0] addr, int core_id);
         BusRequest req;
         req = new(req_type, addr, core_id);
-        bus_mbx.put(req);
+        
+        // Con backpressure, reintentar si la memoria está llena.
+        while (!bus_mbx.try_put(req)) begin
+            #1;
+        end
     endtask
 
     task automatic wait_for_response(int core_id, output bit ready);
@@ -303,6 +307,12 @@ module memory_tb;
 
         if (ok_metrics) begin
             $display("[%0t] [TB] PASS metrics_validation", $realtime);
+        end
+
+        // Validación de backpressure: si ocurrieron rechazos, es indicio de que la profundidad de MEM_MBX_DEPTH fue excedida.
+        if (mem.rejected_requests > 0) begin
+            $display("[%0t] [TB] INFO backpressure detected: %0d requests rejected due to capacity",
+                $realtime, mem.rejected_requests);
         end
 
         $display("[%0t] [TB] DONE all_tests", $realtime);
