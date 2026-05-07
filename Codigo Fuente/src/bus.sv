@@ -325,8 +325,8 @@ class Bus;
 			// Marca de encolado para metricas
 
 			// Nota: registro de depuracion
-			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
-				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
+			$display("@%0t [BUS][ENQ] core=%0d type=%0d addr=%h core_q=%0d shared_occ=%0d",
+				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size(), bus_mbx.num());
 
 			-> queue_event;
 		end
