@@ -35,11 +35,19 @@ class ProtocolFirefly extends ProtocolBase;
         input logic [31:0] tag,
         ref cache_line_t line,
         input BusReq_mbx to_bus,
-        input MemResp_mbx from_mem
+        input MemResp_mbx from_mem,
+        ref int bus_stall_count,
+        ref real total_bus_stall_time,
+        input int BUS_MBX_DEPTH
     );
         BusRequest bus_req;
         MemResponse mem_resp;
         bit hit;
+
+        real t_put_start;
+        real t_put_end;
+        real stall_time;
+        int occupancy_before;
 
         hit = (line.valid && line.tag == tag && line.state != Invalid);
 

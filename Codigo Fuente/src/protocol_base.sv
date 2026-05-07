@@ -59,7 +59,11 @@ virtual class ProtocolBase;
         input logic [31:0] tag,
         ref cache_line_t line,
         input BusReq_mbx to_bus,
-        input MemResp_mbx from_mem
+        input MemResp_mbx from_mem,
+        
+        ref int bus_stall_count,
+        ref real total_bus_stall_time,
+        input int BUS_MBX_DEPTH
     );
         $fatal(1,
             "[ProtocolBase] handle_core_request no implementado (cache=%0d addr=%h idx=%0d)",

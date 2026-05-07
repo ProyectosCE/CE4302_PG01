@@ -31,7 +31,7 @@ module top_tb;
 
     // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
-    localparam BUS_MBX_DEPTH = 4;
+    localparam BUS_MBX_DEPTH = 2;
 
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
