@@ -58,7 +58,7 @@ module top_tb;
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::FIREFLY); // Escoger entre: MSI o FIREFLY
+            caches[i] = new(i, Cache::FIREFLY, BUS_MBX_DEPTH); // Escoger entre: MSI o FIREFLY
             cores[i]  = new(i);
 
             cores[i].to_cache = core_to_cache[i];

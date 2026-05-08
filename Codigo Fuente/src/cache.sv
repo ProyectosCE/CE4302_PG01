@@ -70,7 +70,10 @@ class Cache;
      */
     localparam NUM_LINES = 64;
 
-    localparam int BUS_MBX_DEPTH = 4;
+    /**
+     * @brief Profundidad real del mailbox hacia el bus
+     */
+    int bus_mbx_depth;
 
     // PROTOCOLO
 
@@ -124,12 +127,13 @@ class Cache;
      * Inicializa todas las líneas en estado inválido y selecciona dinámicamente
      * la implementación polimórfica del protocolo de coherencia.
      */
-    function new(int cache_id, protocol_e protocol_sel);
+    function new(int cache_id, protocol_e protocol_sel, int bus_mbx_depth);
         ProtocolMSI     msi_impl;
         ProtocolFirefly firefly_impl;
 
         this.cache_id = cache_id;
         this.protocol_mode = protocol_sel;
+        this.bus_mbx_depth = bus_mbx_depth;
 
         case (protocol_sel)
             MSI: begin
@@ -232,7 +236,7 @@ class Cache;
 
                 total_bus_stalls,
                 total_bus_stall_time,
-                BUS_MBX_DEPTH
+                bus_mbx_depth
             );
         end
     endtask

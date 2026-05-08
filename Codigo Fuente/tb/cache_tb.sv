@@ -27,6 +27,7 @@ module cache_tb;
     import types_pkg::*;
     import model_pkg::*;
 
+    localparam BUS_MBX_DEPTH = 4;
     // 4 CACHES: Dos con MSI, dos con Firefly
     Cache cache0; // MSI
     Cache cache1; // MSI
@@ -64,10 +65,10 @@ module cache_tb;
         bus_mbx = new();
 
         // Crear instancias de caches con diferentes protocolos
-        cache0 = new(0, Cache::MSI);
-        cache1 = new(1, Cache::MSI);
-        cache2 = new(2, Cache::FIREFLY);
-        cache3 = new(3, Cache::FIREFLY);
+        cache0 = new(0, Cache::MSI, BUS_MBX_DEPTH);
+        cache1 = new(1, Cache::MSI, BUS_MBX_DEPTH);
+        cache2 = new(2, Cache::FIREFLY, BUS_MBX_DEPTH);
+        cache3 = new(3, Cache::FIREFLY, BUS_MBX_DEPTH);
 
         // Conexiones core-cache y bus
         cache0.from_core = core_mbx[0];

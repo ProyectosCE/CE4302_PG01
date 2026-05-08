@@ -31,6 +31,7 @@ module workload_csv_tb;
 
     // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
+    localparam BUS_MBX_DEPTH = 4;
 
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
@@ -60,7 +61,7 @@ module workload_csv_tb;
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::MSI);
+            caches[i] = new(i, Cache::MSI, BUS_MBX_DEPTH);
             cores[i]  = new(i);
 
             cores[i].to_cache = core_to_cache[i];
