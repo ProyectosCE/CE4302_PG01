@@ -99,6 +99,25 @@ module top_tb;
         join
     endtask
 
+    /**
+    * @brief Imprime métricas de todas las cachés.
+    */
+    task print_all_cache_metrics(string scenario_name);
+
+        $display("");
+        $display("======================================================");
+        $display("METRICS REPORT: %s", scenario_name);
+        $display("======================================================");
+
+        foreach (caches[i]) begin
+            caches[i].print_metrics();
+        end
+
+        $display("======================================================");
+        $display("");
+
+    endtask
+
     // TEST
     initial begin
 
@@ -125,6 +144,8 @@ module top_tb;
         run_cores();
         #100;
 
+        print_all_cache_metrics("ESCENARIO 1 - ALTA CONTENCION");
+
         // PRODUCTOR - CONSUMIDOR
         setup_system();
 
@@ -145,6 +166,8 @@ module top_tb;
         run_cores();
         #100;
 
+        print_all_cache_metrics("ESCENARIO 2 - PRODUCTOR-CONSUMIDOR");
+
         // MIGRACION DE OWNERSHIP
         setup_system();
 
@@ -161,6 +184,8 @@ module top_tb;
 
         run_cores();
         #100;
+
+        print_all_cache_metrics("ESCENARIO 3 - MIGRACION DE OWNERSHIP");
 
         $display("\n========== FIN DEMO ==========");
         $finish;
