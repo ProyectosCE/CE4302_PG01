@@ -69,6 +69,9 @@ class Bus;
 	/** @brief Tamano de actualizacion en BusUpd (bytes). */
 	localparam int UPDATE_SIZE = 4;
 
+	/** @brief Profundidad maxima de cola interna por core. */
+	localparam int MAX_QUEUE_PER_CORE = 1;
+
 	/** @brief Abstraccion temporal: ancho de banda efectivo en bytes/ns. */
 	real bus_bandwidth_bytes_per_ns;
 
@@ -101,6 +104,8 @@ class Bus;
 	int per_core_requests[];
 	/** @brief Conteo por core de concesiones emitidas. */
 	int per_core_grants[];
+	/** @brief Numero de veces que collector debio esperar espacio. */
+	int queue_backpressure_events;
 
 	/** @brief Cantidad de transacciones BusRd concedidas. */
 	int count_BusRd;
@@ -168,6 +173,7 @@ class Bus;
 		this.latency_BusRd = 0.0;
 		this.latency_BusRdX = 0.0;
 		this.latency_BusUpd = 0.0;
+		this.queue_backpressure_events = 0;
 
 		if (this.bus_mbx == null) begin
 			$fatal(1, "[Bus] bus_mbx no inicializado");
@@ -319,14 +325,23 @@ class Bus;
 			end
 
 			req.t_enqueue = $realtime; // Referencia para medir tiempo en cola.
+
+			// Si la cola interna del core está llena, el collector debe esperar hasta que escheduler libere espacio.
+			if (req_queues[core_id].size() >= MAX_QUEUE_PER_CORE) begin
+				queue_backpressure_events++;
+				$display("@%0t [BUS][BACKPRESSURE] core_id=%0d, waiting_internal_queue occ=%0d/%0d", $realtime, core_id, req_queues[core_id].size(), MAX_QUEUE_PER_CORE);
+				wait(req_queues[core_id].size() < MAX_QUEUE_PER_CORE);
+				$display("@%0t [BUS][BACKPRESSURE_END] core_id=%0d, occ=%0d/%0d", $realtime, core_id, req_queues[core_id].size(), MAX_QUEUE_PER_CORE);
+				@queue_event; // Espera a que el planificador libere espacio.
+			end
 			total_requests++;
 			per_core_requests[core_id]++;
 			req_queues[core_id].push_back(req);
 			// Marca de encolado para metricas
 
 			// Nota: registro de depuracion
-			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
-				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
+			$display("@%0t [BUS][ENQ] core=%0d type=%0d addr=%h core_q=%0d shared_occ=%0d",
+				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size(), bus_mbx.num());
 
 			-> queue_event;
 		end
@@ -481,6 +496,8 @@ class Bus;
 			$display("[WARN] requests != grants");
 		$display("total_invalidations=%0d total_updates=%0d grant_id=%0d",
 			total_invalidations, total_updates, grant_id);
+		$display("queue_backpressure_events=%0d",
+			queue_backpressure_events);
 		$display("per_core stats:");
 		for (int i = 0; i < num_cores; i++) begin
 			$display("  core%0d req=%0d grant=%0d", i, per_core_requests[i], per_core_grants[i]);

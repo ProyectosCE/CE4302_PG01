@@ -31,6 +31,7 @@ module top_tb;
 
     // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
+    localparam BUS_MBX_DEPTH = 4;
 
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
@@ -50,14 +51,14 @@ module top_tb;
      */
     task setup_system();
 
-        bus_mbx = new();
+        bus_mbx = new(BUS_MBX_DEPTH);
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::MSI);
+            caches[i] = new(i, Cache::FIREFLY); // Escoger entre: MSI o FIREFLY
             cores[i]  = new(i);
 
             cores[i].to_cache = core_to_cache[i];

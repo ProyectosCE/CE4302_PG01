@@ -35,11 +35,19 @@ class ProtocolFirefly extends ProtocolBase;
         input logic [31:0] tag,
         ref cache_line_t line,
         input BusReq_mbx to_bus,
-        input MemResp_mbx from_mem
+        input MemResp_mbx from_mem,
+        ref int bus_stall_count,
+        ref real total_bus_stall_time,
+        input int BUS_MBX_DEPTH
     );
         BusRequest bus_req;
         MemResponse mem_resp;
         bit hit;
+
+        real t_put_start;
+        real t_put_end;
+        real stall_time;
+        int occupancy_before;
 
         hit = (line.valid && line.tag == tag && line.state != Invalid);
 
@@ -56,7 +64,35 @@ class ProtocolFirefly extends ProtocolBase;
                 // Escritura sobre línea compartida: update por BusUpd
                 if (line.state == Shared) begin
                     bus_req = new(BusUpd, req.address, cache_id);
+                    occupancy_before = to_bus.num();
+
+                    if (occupancy_before >= BUS_MBX_DEPTH) begin
+                        bus_stall_count++;
+                        $display(
+                            "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
+                            $realtime,
+                            cache_id,
+                            bus_req.req_type,
+                            bus_req.address,
+                            occupancy_before,
+                            BUS_MBX_DEPTH
+                        );
+                    end
+
+                    t_put_start = $realtime;
                     to_bus.put(bus_req);
+                    t_put_end = $realtime;
+                    stall_time = t_put_end - t_put_start;
+                    total_bus_stall_time += stall_time;
+                     $display(
+                        "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
+                        $realtime,
+                        cache_id,
+                        bus_req.req_type,
+                        bus_req.address,
+                        stall_time,
+                        to_bus.num()
+                    );
 
                     // Permanece en estado Shared (Firefly)
                 end
@@ -70,7 +106,35 @@ class ProtocolFirefly extends ProtocolBase;
                     $realtime, cache_id, req.address);
 
                 bus_req = new(BusRd, req.address, cache_id);
+                occupancy_before = to_bus.num();
+
+                if (occupancy_before >= BUS_MBX_DEPTH) begin
+                    bus_stall_count++;
+                    $display(
+                        "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
+                        $realtime,
+                        cache_id,
+                        bus_req.req_type,
+                        bus_req.address,
+                        occupancy_before,
+                        BUS_MBX_DEPTH
+                    );
+                end
+
+                t_put_start = $realtime;
                 to_bus.put(bus_req);
+                t_put_end = $realtime;
+                stall_time = t_put_end - t_put_start;
+                total_bus_stall_time += stall_time;
+                 $display(
+                    "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
+                    $realtime,
+                    cache_id,
+                    bus_req.req_type,
+                    bus_req.address,
+                    stall_time,
+                    to_bus.num()
+                );
                 from_mem.get(mem_resp);
 
                 line.tag   = tag;
@@ -82,7 +146,35 @@ class ProtocolFirefly extends ProtocolBase;
                     $realtime, cache_id, req.address);
 
                 bus_req = new(BusRdX, req.address, cache_id);
+                occupancy_before = to_bus.num();
+
+                if (occupancy_before >= BUS_MBX_DEPTH) begin
+                    bus_stall_count++;
+                    $display(
+                        "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
+                        $realtime,
+                        cache_id,
+                        bus_req.req_type,
+                        bus_req.address,
+                        occupancy_before,
+                        BUS_MBX_DEPTH
+                    );
+                end
+
+                t_put_start = $realtime;
                 to_bus.put(bus_req);
+                t_put_end = $realtime;
+                stall_time = t_put_end - t_put_start;
+                total_bus_stall_time += stall_time;
+                 $display(
+                    "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
+                    $realtime,
+                    cache_id,
+                    bus_req.req_type,
+                    bus_req.address,
+                    stall_time,
+                    to_bus.num()
+                );
                 from_mem.get(mem_resp);
 
                 line.tag   = tag;

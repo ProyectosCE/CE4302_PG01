@@ -70,6 +70,8 @@ class Cache;
      */
     localparam NUM_LINES = 64;
 
+    localparam int BUS_MBX_DEPTH = 4;
+
     // PROTOCOLO
 
     /**
@@ -146,6 +148,11 @@ class Cache;
             lines[i].state = Invalid;
             lines[i].tag   = 0;
         end
+
+        this.total_bus_stall_time = 0.0;
+        this.total_bus_stalls = 0;
+        this.max_bus_stall_time = 0.0;
+
     endfunction
 
 
@@ -221,7 +228,11 @@ class Cache;
                 tag,
                 lines[index],
                 to_bus,
-                from_mem
+                from_mem,
+
+                total_bus_stalls,
+                total_bus_stall_time,
+                BUS_MBX_DEPTH
             );
         end
     endtask
@@ -258,5 +269,39 @@ class Cache;
             );
         end
     endtask
+
+    // BUS STALL METRICS
+    real total_bus_stall_time;
+    int total_bus_stalls;
+    real max_bus_stall_time;
+
+
+    /**
+    * @brief Registra tiempo bloqueado intentando acceder al bus.
+    */
+    function void record_bus_stall(
+        real stall_time,
+        BusRequest req
+    );
+
+        if (stall_time <= 0.0)
+            return;
+
+        total_bus_stalls++;
+        total_bus_stall_time += stall_time;
+
+        if (stall_time > max_bus_stall_time)
+            max_bus_stall_time = stall_time;
+
+        $display(
+            "@%0t [CACHE%0d][STALL] blocked_on_bus=%0f ns type=%0d addr=%h",
+            $realtime,
+            cache_id,
+            stall_time,
+            req.req_type,
+            req.address
+        );
+
+    endfunction
 
 endclass
