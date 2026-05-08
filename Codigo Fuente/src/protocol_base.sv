@@ -91,4 +91,75 @@ virtual class ProtocolBase;
             cache_id, evt.address, index);
     endtask
 
+    /**
+     * @brief Helper reusable para enviar requests al bus.
+     *
+     * RESPONSABILIDAD:
+     *   - Detectar backpressure/stall
+     *   - Medir tiempo bloqueado en mailbox.put()
+     *   - Actualizar métricas de stall
+     *   - Emitir logs de STALL y PUT
+     *
+     * REUTILIZACIÓN:
+     *   Todos los protocolos (MSI/Firefly)
+     *   reutilizan esta lógica.
+     */
+    task automatic send_bus_request(
+        input int cache_id,
+        input BusRequest bus_req,
+        input BusReq_mbx to_bus,
+
+        ref int bus_stall_count,
+        ref real total_bus_stall_time,
+
+        input int BUS_MBX_DEPTH
+    );
+
+        real t_put_start;
+        real t_put_end;
+        real stall_time;
+
+        int occupancy_before;
+
+        occupancy_before = to_bus.num();
+
+        // Detecta potencial backpressure
+        if (occupancy_before >= BUS_MBX_DEPTH) begin
+
+            bus_stall_count++;
+
+            $display(
+                "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
+                $realtime,
+                cache_id,
+                bus_req.req_type,
+                bus_req.address,
+                occupancy_before,
+                BUS_MBX_DEPTH
+            );
+        end
+
+        // Medición de bloqueo real
+        t_put_start = $realtime;
+
+        to_bus.put(bus_req);
+
+        t_put_end = $realtime;
+
+        stall_time = t_put_end - t_put_start;
+
+        total_bus_stall_time += stall_time;
+
+        $display(
+            "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
+            $realtime,
+            cache_id,
+            bus_req.req_type,
+            bus_req.address,
+            stall_time,
+            to_bus.num()
+        );
+
+    endtask
+
 endclass
