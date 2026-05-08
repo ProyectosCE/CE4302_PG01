@@ -37,6 +37,12 @@ class ProtocolMSI extends ProtocolBase;
         input BusReq_mbx to_bus,
         input MemResp_mbx from_mem,
 
+        ref int read_hits,
+        ref int read_misses,
+
+        ref int write_hits,
+        ref int write_misses,
+
         ref int bus_stall_count,
         ref real total_bus_stall_time,
         input int BUS_MBX_DEPTH
@@ -45,20 +51,17 @@ class ProtocolMSI extends ProtocolBase;
         MemResponse mem_resp;
         bit hit;
 
-        real t_put_start;
-        real t_put_end;
-        real stall_time;
-        int occupancy_before;
-
         hit = (line.valid && line.tag == tag && line.state != Invalid);
 
         // HIT
         if (hit) begin
             if (req.req_type == PrRd) begin
+                read_hits++;
                 $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
                     $realtime, cache_id, req.address, line.state);
             end
             else begin // PrWr
+                write_hits++;
                 $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
                     $realtime, cache_id, req.address, line.state);
 
@@ -66,33 +69,7 @@ class ProtocolMSI extends ProtocolBase;
                 if (line.state == Shared) begin
 
                     bus_req = new(BusRdX, req.address, cache_id);
-                    occupancy_before = to_bus.num();
-                    if (occupancy_before >= BUS_MBX_DEPTH) begin
-                        bus_stall_count++;
-                        $display(
-                            "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
-                            $realtime,
-                            cache_id,
-                            bus_req.req_type,
-                            bus_req.address,
-                            occupancy_before,
-                            BUS_MBX_DEPTH
-                        );
-                    end
-                    t_put_start = $realtime;
-                    to_bus.put(bus_req);
-                    t_put_end = $realtime;
-                    stall_time = t_put_end - t_put_start;
-                    total_bus_stall_time += stall_time;
-                     $display(
-                        "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
-                        $realtime,
-                        cache_id,
-                        bus_req.req_type,
-                        bus_req.address,
-                        stall_time,
-                        to_bus.num()
-                    );
+                    send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                     from_mem.get(mem_resp);
 
                     line.state = Modified;
@@ -103,37 +80,12 @@ class ProtocolMSI extends ProtocolBase;
         // MISS
         else begin
             if (req.req_type == PrRd) begin
+                read_misses++;
                 $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
                     $realtime, cache_id, req.address);
 
                 bus_req = new(BusRd, req.address, cache_id);
-                occupancy_before = to_bus.num();
-                if (occupancy_before >= BUS_MBX_DEPTH) begin
-                    bus_stall_count++;
-                    $display(
-                        "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
-                        $realtime,
-                        cache_id,
-                        bus_req.req_type,
-                        bus_req.address,
-                        occupancy_before,
-                        BUS_MBX_DEPTH
-                    );
-                end
-                t_put_start = $realtime;
-                to_bus.put(bus_req);
-                t_put_end = $realtime;
-                stall_time = t_put_end - t_put_start;
-                total_bus_stall_time += stall_time;
-                $display(
-                    "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
-                    $realtime,
-                    cache_id,
-                    bus_req.req_type,
-                    bus_req.address,
-                    stall_time,
-                    to_bus.num()
-                );
+                send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
 
                 line.tag   = tag;
@@ -141,37 +93,12 @@ class ProtocolMSI extends ProtocolBase;
                 line.state = Shared;
             end
             else begin // PrWr
+                write_misses++;
                 $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
                     $realtime, cache_id, req.address);
 
                 bus_req = new(BusRdX, req.address, cache_id);
-                occupancy_before = to_bus.num();
-                if (occupancy_before >= BUS_MBX_DEPTH) begin
-                    bus_stall_count++;
-                    $display(
-                        "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
-                        $realtime,
-                        cache_id,
-                        bus_req.req_type,
-                        bus_req.address,
-                        occupancy_before,
-                        BUS_MBX_DEPTH
-                    );
-                end
-                t_put_start = $realtime;
-                to_bus.put(bus_req);
-                t_put_end = $realtime;
-                stall_time = t_put_end - t_put_start;
-                total_bus_stall_time += stall_time;
-                $display(
-                    "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
-                    $realtime,
-                    cache_id,
-                    bus_req.req_type,
-                    bus_req.address,
-                    stall_time,
-                    to_bus.num()
-                );
+                send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
 
                 line.tag   = tag;
@@ -190,7 +117,16 @@ class ProtocolMSI extends ProtocolBase;
         input BusEvent evt,
         input int index,
         input logic [31:0] tag,
-        ref cache_line_t line
+        ref cache_line_t line,
+
+        ref int snoop_busrd,
+        ref int snoop_busrdx,
+        ref int snoop_busupd,
+
+        ref int invalidations_received,
+        ref int updates_received,
+
+        ref int writebacks
     );
         // Solo procesa si la línea es válida y el tag coincide
         if (!(line.valid && line.tag == tag)) begin
@@ -200,18 +136,22 @@ class ProtocolMSI extends ProtocolBase;
         case (evt.req_type)
             // BusRd
             BusRd: begin
+                snoop_busrd++;
                 if (line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified->Shared (WB)",
+                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified -> Shared (WB)",
                         $realtime, cache_id);
+                    writebacks++;
                     line.state = Shared;
                 end
             end
 
             // BusRdX
             BusRdX: begin
+                snoop_busrdx++;
                 if (line.state == Shared || line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRdX -> -> Invalid",
+                    $display("@%0t [Cache %0d] SNOOP BusRdX -> Invalid",
                         $realtime, cache_id);
+                    invalidations_received++;
                     line.state = Invalid;
                     line.valid = 0;
                 end
@@ -219,6 +159,7 @@ class ProtocolMSI extends ProtocolBase;
 
             // BusUpd (mantener compatibilidad de trazas)
             BusUpd: begin
+                snoop_busupd++;
                 if (line.state == Shared) begin
                     $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece Shared",
                         $realtime, cache_id);
