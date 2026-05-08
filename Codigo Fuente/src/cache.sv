@@ -157,6 +157,22 @@ class Cache;
         this.total_bus_stalls = 0;
         this.max_bus_stall_time = 0.0;
 
+        // CACHE METRICS INIT
+        read_hits  = 0;
+        read_misses = 0;
+
+        write_hits = 0;
+        write_misses = 0;
+
+        snoop_busrd  = 0;
+        snoop_busrdx = 0;
+        snoop_busupd = 0;
+
+        invalidations_received = 0;
+        updates_received = 0;
+
+        writebacks = 0;
+
     endfunction
 
 
@@ -234,6 +250,9 @@ class Cache;
                 to_bus,
                 from_mem,
 
+                writes_hits,
+                write_misses,
+
                 total_bus_stalls,
                 total_bus_stall_time,
                 bus_mbx_depth
@@ -269,7 +288,16 @@ class Cache;
                 evt,
                 index,
                 tag,
-                lines[index]
+                lines[index],
+
+                snoop_busrd,
+                snoop_busrdx,
+                snoop_busupd,
+
+                invalidations_received,
+                updates_received,
+
+                writebacks
             );
         end
     endtask
@@ -278,6 +306,26 @@ class Cache;
     real total_bus_stall_time;
     int total_bus_stalls;
     real max_bus_stall_time;
+
+    // CACHE METRICS
+    // Hits / Misses
+    int read_hits;
+    int read_misses;
+
+    int write_hits;
+    int write_misses;
+
+    // Snoop traffic
+    int snoop_busrd;
+    int snoop_busrdx;
+    int snoop_busupd;
+
+    // Coherence events
+    int invalidations_received;
+    int updates_received;
+
+    // Writebacks
+    int writebacks;
 
 
     /**

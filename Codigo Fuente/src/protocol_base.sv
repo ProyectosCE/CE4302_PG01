@@ -60,6 +60,12 @@ virtual class ProtocolBase;
         ref cache_line_t line,
         input BusReq_mbx to_bus,
         input MemResp_mbx from_mem,
+
+        ref int read_hits,
+        ref int read_misses,
+
+        ref int write_hits,
+        ref int write_misses,
         
         ref int bus_stall_count,
         ref real total_bus_stall_time,
@@ -84,7 +90,16 @@ virtual class ProtocolBase;
         input BusEvent evt,
         input int index,
         input logic [31:0] tag,
-        ref cache_line_t line
+        ref cache_line_t line,
+
+        ref int snoop_busrd,
+        ref int snoop_busrdx,
+        ref int snoop_busupd,
+
+        ref int invalidations_received,
+        ref int updates_received,
+
+        ref int writebacks
     );
         $fatal(1,
             "[ProtocolBase] handle_snoop no implementado (cache=%0d addr=%h idx=%0d)",
