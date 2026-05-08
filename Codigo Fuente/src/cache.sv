@@ -70,7 +70,7 @@ class Cache;
      */
     localparam NUM_LINES = 64;
 
-    localparam int BUS_MBX_DEPTH = 2;
+    localparam int BUS_MBX_DEPTH = 4;
 
     // PROTOCOLO
 
