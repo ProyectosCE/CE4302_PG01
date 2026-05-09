@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generador de workloads sintéticos de 10k líneas.
+Generador de workloads sintéticos de NUM_LINES líneas.
 Mantiene los patrones funcionales de cada caso usando probabilidades.
 """
 
@@ -8,7 +8,7 @@ import csv
 import os
 
 # Configuración
-NUM_LINES = 10000
+NUM_LINES = 1000000
 NUM_CORES = 4
 
 def generate_contention_workload(output_file):
@@ -17,11 +17,11 @@ def generate_contention_workload(output_file):
     con patrones alternados Read/Write.
     
     Patrón actual:
-    - Ciclos pares (0,2,4...): todos leen (R)
-    - Ciclos impares (1,3,5...): todos escriben (W)
+    - Primeras mitades de ciclos: todos leen (R)
+    - Segundas mitades de ciclos: todos escriben (W)
     - Dirección fija: 0x00001000
     """
-    rows = [['cycle', 'core_id', 'op', 'address']]
+    rows = [['core_id', 'op', 'address']]
     
     cycle = 0
     lines_written = 0
@@ -30,7 +30,7 @@ def generate_contention_workload(output_file):
         op = 'R' if (cycle % 2 == 0) else 'W'
         
         for core_id in range(NUM_CORES):
-            rows.append([str(cycle), str(core_id), op, '0x00001000'])
+            rows.append([str(core_id), op, '0x00001000'])
             lines_written += 1
             if lines_written >= NUM_LINES:
                 break
@@ -49,15 +49,15 @@ def generate_migration_workload(output_file):
     Patrón Migration: Escrituras que rotan entre cores secuencialmente.
     
     Patrón actual:
-    - Ciclo i: core (i % 4) escribe
+    - Línea i: core (i % 4) escribe
     - Dirección fija: 0x00003000
     - Simula migración de datos entre cachés
     """
-    rows = [['cycle', 'core_id', 'op', 'address']]
+    rows = [['core_id', 'op', 'address']]
     
-    for cycle in range(NUM_LINES):
-        core_id = cycle % NUM_CORES
-        rows.append([str(cycle), str(core_id), 'W', '0x00003000'])
+    for line_idx in range(NUM_LINES):
+        core_id = line_idx % NUM_CORES
+        rows.append([str(core_id), 'W', '0x00003000'])
     
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -72,11 +72,11 @@ def generate_prodcons_workload(output_file):
     dos consumidores (cores 2,3) leen.
     
     Patrón actual:
-    - Ciclos 0,2,4... (pares): cores 0,1 escriben (productores)
-    - Ciclos 1,3,5... (impares): cores 2,3 leen (consumidores)
+    - Líneas pares: cores 0,1 escriben (productores)
+    - Líneas impares: cores 2,3 leen (consumidores)
     - Dirección fija: 0x00002000
     """
-    rows = [['cycle', 'core_id', 'op', 'address']]
+    rows = [['core_id', 'op', 'address']]
     
     cycle = 0
     lines_written = 0
@@ -85,14 +85,14 @@ def generate_prodcons_workload(output_file):
         if cycle % 2 == 0:
             # Ciclo par: productores escriben
             for core_id in [0, 1]:
-                rows.append([str(cycle), str(core_id), 'W', '0x00002000'])
+                rows.append([str(core_id), 'W', '0x00002000'])
                 lines_written += 1
                 if lines_written >= NUM_LINES:
                     break
         else:
             # Ciclo impar: consumidores leen
             for core_id in [2, 3]:
-                rows.append([str(cycle), str(core_id), 'R', '0x00002000'])
+                rows.append([str(core_id), 'R', '0x00002000'])
                 lines_written += 1
                 if lines_written >= NUM_LINES:
                     break
@@ -107,11 +107,11 @@ def generate_prodcons_workload(output_file):
 
 
 def main():
-    """Genera los tres workloads de 10k líneas."""
+    """Genera los tres workloads de NUM_LINES líneas."""
     traces_dir = os.path.dirname(os.path.abspath(__file__))
     
     print("=" * 60)
-    print("Generador de Workloads Sintéticos (10k líneas)")
+    print(f"Generador de Workloads Sintéticos ({NUM_LINES} líneas)")
     print("=" * 60)
     
     # Contention: todos a la misma dirección, patrones alternados
