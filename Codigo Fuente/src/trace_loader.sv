@@ -50,13 +50,12 @@ class TraceLoader;
 
     /**
      * @brief Carga las solicitudes del archivo CSV en los cores correspondientes.
-     *        Formato esperado: cycle,core_id,op,address
+     *        Formato esperado: core_id,op,address
      * @param cores Arreglo de cores a los que se asignarán las solicitudes
      */
     task load_into_cores(Core cores[]);
         int file, r, line_num;
         string line;
-        int cycle;
         int core_id;
         byte unsigned op_char;
         string op_str;
@@ -96,11 +95,11 @@ class TraceLoader;
             if (line.len() && (line[line.len()-1] == 13))
                 line = line.substr(0, line.len()-1);
 
-            // Parsea línea CSV: cycle,core_id,op,address
+            // Parsea línea CSV: core_id,op,address
             // Nota: usar %c para 'op' evita que %s consuma la coma.
-            r = $sscanf(line, "%d,%d,%c,%s", cycle, core_id, op_char, address_str);
-            if (r != 4) begin
-                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 4 campos): %s", line_num, line);
+            r = $sscanf(line, "%d,%c,%s", core_id, op_char, address_str);
+            if (r != 3) begin
+                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 3 campos): %s", line_num, line);
                 skipped++;
                 continue;
             end
