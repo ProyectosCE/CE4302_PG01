@@ -14,21 +14,6 @@
  */
 
 /**
- * @brief Estado de coherencia de una línea de caché.
- */
-typedef enum {Invalid, Shared, Modified} state_e;
-
-/**
- * @brief Estructura de línea de caché compartida entre Cache y protocolos.
- */
-typedef struct {
-    logic [31:0] tag;
-    state_e state;
-    bit valid;
-} cache_line_t;
-
-
-/**
  * ============================================
  * CLASE: ProtocolBase
  * DESCRIPCIÓN:
@@ -69,7 +54,8 @@ virtual class ProtocolBase;
         
         ref int bus_stall_count,
         ref real total_bus_stall_time,
-        input int BUS_MBX_DEPTH
+        input int BUS_MBX_DEPTH,
+        input EventMonitor transition_monitor
     );
         $fatal(1,
             "[ProtocolBase] handle_core_request no implementado (cache=%0d addr=%h idx=%0d)",
@@ -99,7 +85,8 @@ virtual class ProtocolBase;
         ref int invalidations_received,
         ref int updates_received,
 
-        ref int writebacks
+        ref int writebacks,
+        input EventMonitor transition_monitor
     );
         $fatal(1,
             "[ProtocolBase] handle_snoop no implementado (cache=%0d addr=%h idx=%0d)",

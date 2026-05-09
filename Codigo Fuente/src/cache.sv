@@ -95,6 +95,11 @@ class Cache;
      */
     ProtocolBase protocol;
 
+    /**
+     * @brief Monitor opcional para registrar transiciones de FSM.
+     */
+    EventMonitor fsm_monitor;
+
 
     // MAILBOXES DE COMUNICACIÓN 
     /**
@@ -278,7 +283,8 @@ class Cache;
 
                 total_bus_stalls,
                 total_bus_stall_time,
-                bus_mbx_depth
+                bus_mbx_depth,
+                fsm_monitor
             );
         end
     endtask
@@ -320,7 +326,8 @@ class Cache;
                 invalidations_received,
                 updates_received,
 
-                writebacks
+                writebacks,
+                fsm_monitor
             );
         end
     endtask

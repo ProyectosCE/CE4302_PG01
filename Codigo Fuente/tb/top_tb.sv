@@ -37,6 +37,7 @@ module top_tb;
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
     Bus   bus;
+    EventMonitor fsm_monitor;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -53,6 +54,11 @@ module top_tb;
 
         bus_mbx = new(BUS_MBX_DEPTH);
 
+        if (fsm_monitor == null) begin
+            fsm_monitor = new();
+            fsm_monitor.enable_transition_export("Codigo Fuente/sim_results/fsm_transitions.csv");
+        end
+
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
@@ -60,6 +66,8 @@ module top_tb;
         foreach (cores[i]) begin
             caches[i] = new(i, Cache::FIREFLY, BUS_MBX_DEPTH); // Escoger entre: MSI o FIREFLY
             cores[i]  = new(i);
+
+            caches[i].fsm_monitor = fsm_monitor;
 
             cores[i].to_cache = core_to_cache[i];
 
@@ -188,6 +196,9 @@ module top_tb;
         print_all_cache_metrics("ESCENARIO 3 - MIGRACION DE OWNERSHIP");
 
         $display("\n========== FIN DEMO ==========");
+        if (fsm_monitor != null) begin
+            fsm_monitor.close();
+        end
         $finish;
 
     end

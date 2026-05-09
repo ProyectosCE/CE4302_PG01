@@ -45,7 +45,8 @@ class ProtocolFirefly extends ProtocolBase;
 
         ref int bus_stall_count,
         ref real total_bus_stall_time,
-        input int BUS_MBX_DEPTH
+        input int BUS_MBX_DEPTH,
+        input EventMonitor transition_monitor
     );
         BusRequest bus_req;
         MemResponse mem_resp;
@@ -78,10 +79,13 @@ class ProtocolFirefly extends ProtocolBase;
         // MISS
         else begin
             if (req.req_type == PrRd) begin
+                state_e old_state;
+
                 read_misses++;
                 $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
                     $realtime, cache_id, req.address);
 
+                old_state = line.state;
                 bus_req = new(BusRd, req.address, cache_id);
                 send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
@@ -89,12 +93,18 @@ class ProtocolFirefly extends ProtocolBase;
                 line.tag   = tag;
                 line.valid = 1;
                 line.state = Shared;
+                if (transition_monitor != null) begin
+                    transition_monitor.record_transition($rtoi($realtime), cache_id, req.address, index, old_state, line.state, "PrRd MISS -> BusRd");
+                end
             end
             else begin // PrWr
+                state_e old_state;
+
                 write_misses++;
                 $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
                     $realtime, cache_id, req.address);
 
+                old_state = line.state;
                 bus_req = new(BusRdX, req.address, cache_id);
                 send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
@@ -102,6 +112,9 @@ class ProtocolFirefly extends ProtocolBase;
                 line.tag   = tag;
                 line.valid = 1;
                 line.state = Modified;
+                if (transition_monitor != null) begin
+                    transition_monitor.record_transition($rtoi($realtime), cache_id, req.address, index, old_state, line.state, "PrWr MISS -> BusRdX");
+                end
             end
         end
     endtask
@@ -124,7 +137,8 @@ class ProtocolFirefly extends ProtocolBase;
         ref int invalidations_received,
         ref int updates_received,
 
-        ref int writebacks
+        ref int writebacks,
+        input EventMonitor transition_monitor
     );
         // Solo procesa si la línea es válida y el tag coincide
         if (!(line.valid && line.tag == tag)) begin
@@ -136,10 +150,16 @@ class ProtocolFirefly extends ProtocolBase;
             BusRd: begin
                 snoop_busrd++;
                 if (line.state == Modified) begin
+                    state_e old_state;
+
+                    old_state = line.state;
                     $display("@%0t [Cache %0d] SNOOP BusRd -> Modified -> Shared (WB)",
                         $realtime, cache_id);
                     writebacks++;
                     line.state = Shared;
+                    if (transition_monitor != null) begin
+                        transition_monitor.record_transition($rtoi($realtime), cache_id, evt.address, index, old_state, line.state, "Snoop BusRd");
+                    end
                 end
             end
 
@@ -147,11 +167,17 @@ class ProtocolFirefly extends ProtocolBase;
             BusRdX: begin
                 snoop_busrdx++;
                 if (line.state == Shared || line.state == Modified) begin
+                    state_e old_state;
+
+                    old_state = line.state;
                     $display("@%0t [Cache %0d] SNOOP BusRdX -> Invalid",
                         $realtime, cache_id);
                     invalidations_received++;
                     line.state = Invalid;
                     line.valid = 0;
+                    if (transition_monitor != null) begin
+                        transition_monitor.record_transition($rtoi($realtime), cache_id, evt.address, index, old_state, line.state, "Snoop BusRdX");
+                    end
                 end
             end
 
