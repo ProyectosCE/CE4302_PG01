@@ -6,7 +6,14 @@ $tbDir = Join-Path $root '..\tb'
 $srcDir = Join-Path $root '..\src'
 $tracesDir = Join-Path $root '..\traces'
 $simDir = Join-Path $root '..\scripts'
+$resultsDir = Join-Path $root '..\sim_results'
 $runDoPath = Join-Path $root 'run_tb.do'
+
+
+if (-not (Test-Path $resultsDir)) {
+    New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
+    Write-Host "Carpeta sim_results creada." -ForegroundColor Green
+}
 
 # List all .sv files in tb/ and extract module names
 $tbFiles = Get-ChildItem -Path $tbDir -Filter '*.sv' | Select-Object -ExpandProperty Name

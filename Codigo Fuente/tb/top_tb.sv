@@ -56,7 +56,7 @@ module top_tb;
 
         if (fsm_monitor == null) begin
             fsm_monitor = new();
-            fsm_monitor.enable_transition_export("Codigo Fuente/sim_results/fsm_transitions.csv");
+            fsm_monitor.enable_transition_export("../sim_results/fsm_transitions.csv");
         end
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
