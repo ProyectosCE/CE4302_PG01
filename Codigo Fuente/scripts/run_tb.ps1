@@ -56,6 +56,27 @@ if (-not [int]::TryParse($selected, [ref]$selectedInt) -or $selectedInt -lt 0 -o
 
 $tbName = $tbModules[$selectedInt]
 
+# Seleccionar protocolo de coherencia
+Write-Host 'Protocolos disponibles:' -ForegroundColor Cyan
+Write-Host '[0] MSI'
+Write-Host '[1] FIREFLY'
+
+$selectedProtocol = Read-Host 'Ingrese el numero del protocolo que desea simular'
+[int]$selectedProtocolInt = -1
+
+if (-not [int]::TryParse($selectedProtocol, [ref]$selectedProtocolInt) -or $selectedProtocolInt -lt 0 -or $selectedProtocolInt -gt 1) {
+    Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
+    exit 1
+}
+
+if ($selectedProtocolInt -eq 0) {
+    $protocolName = 'MSI'
+} else {
+    $protocolName = 'FIREFLY'
+}
+
+Write-Host "Protocolo seleccionado: $protocolName" -ForegroundColor Green
+
 
 
 
@@ -90,7 +111,7 @@ if ($tbName -eq 'workload_csv_tb') {
         'vlog "../src/types_pkg.sv"',
         'vlog "../src/model_pkg.sv"',
         'vlog "../tb/*.sv"',
-        ('vsim ' + $tbName + ' +TRACE_FILE=' + $traceRel),
+        ('vsim ' + $tbName + ' +TRACE_FILE=' + $traceRel + ' +PROTOCOL=' + $protocolName),
         'run -all',
         'quit'
     )
@@ -100,7 +121,7 @@ if ($tbName -eq 'workload_csv_tb') {
         'vlog "../src/types_pkg.sv"',
         'vlog "../src/model_pkg.sv"',
         'vlog "../tb/*.sv"',
-        ('vsim ' + $tbName),
+        ('vsim ' + $tbName + ' +PROTOCOL=' + $protocolName),
         'run -all',
         'quit'
     )

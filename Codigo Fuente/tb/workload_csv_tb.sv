@@ -148,15 +148,19 @@ module workload_csv_tb;
             trace_file = "";
         end
 
-        protocol_name = "FIREFLY";
+        protocol_name = "";
         if ($value$plusargs("PROTOCOL=%s", protocol_name)) begin
             if (protocol_name == "MSI" || protocol_name == "msi") begin
+                $display("[TopTB] Protocolo seleccionado: MSI");
                 protocol_sel = Cache::MSI;
             end else begin
+                $display("[TopTB] Protocolo seleccionado: FIREFLY");
                 protocol_sel = Cache::FIREFLY;
             end
         end else begin
-            protocol_sel = Cache::FIREFLY;
+            $display("[TopTB] +PROTOCOL no especificado");
+            // salir
+            $finish;
         end
 
         // Ejecuta un único escenario cargando desde archivo
