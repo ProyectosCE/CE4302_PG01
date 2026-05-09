@@ -47,12 +47,12 @@ class Memory;
     event queue_event;
 
     // Constructor
-    function new(BusReq_mbx bus_mbx, MemResp_mbx mem_mbx[], int num_cores = 4, real bandwidth = 8.0);
+    function new(BusReq_mbx bus_mbx, MemResp_mbx mem_mbx_in[], int num_cores = 4, real bandwidth = 8.0);
         this.bus_mbx = bus_mbx;
         this.num_cores = num_cores;
-        this.mem_mbx = new[mem_mbx.size()];
-        for (int i = 0; i < mem_mbx.size() && i < this.mem_mbx.size(); i++) begin
-            this.mem_mbx[i] = mem_mbx[i];
+        this.mem_mbx = new[mem_mbx_in.size()];
+        for (int i = 0; i < mem_mbx_in.size() && i < this.mem_mbx.size(); i++) begin
+            this.mem_mbx[i] = mem_mbx_in[i];
         end
 
         this.mem_bandwidth_bytes_per_ns = bandwidth;
@@ -98,6 +98,9 @@ class Memory;
         BusRequest req;
         real t_start;
         real t_done;
+        real queue_wait;
+        int bytes;
+        real service_time;
         forever begin
             if (req_queue.size() == 0) begin
                 @queue_event;
@@ -106,11 +109,11 @@ class Memory;
 
             req = req_queue.pop_front();
             t_start = $realtime;
-            real queue_wait = t_start - req.t_enqueue;
+            queue_wait = t_start - req.t_enqueue;
             this.total_queue_wait_time += queue_wait;
 
-            int bytes = get_transaction_size(req);
-            real service_time = bytes / this.mem_bandwidth_bytes_per_ns;
+            bytes = get_transaction_size(req);
+            service_time = bytes / this.mem_bandwidth_bytes_per_ns;
 
             // contabilizar por tipo
             case (req.req_type)
