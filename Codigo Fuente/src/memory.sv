@@ -2,7 +2,8 @@ import types_pkg::*;
 
 
 /*
-Memory module
+Class Memory
+Descripción:
 Este modulo implementa una memoria de 256 palabras de 32 bits cada una. 
 La memoria es de lectura y escritura, y se accede a ella mediante una dirección de 8 bits (para seleccionar una de las 256 palabras) 
 y una señal de escritura (we) que indica si se va a escribir o leer. 
@@ -33,17 +34,36 @@ Refencias:
 - Medium Memory Design in System Verilog, Jawad Ahmed Jan 22, 2025, https://medium.com/@jawadahmed2k3/simple-memory-design-in-system-verilog-ea0ea3c70a64
 
 */
+/*
+ * ============================================
+ * NOTAS:
+ *   - Se ha utilizado $realtime para medir el tiempo de simulación en la tarea run del core, ya que permite obtener
+ */
+class Memory;
 
-module memory #(parameter N = 8, M = 32)
-(input logic clk,
-input logic we,
-input logic [N-1:0] adr,
-input logic [M-1:0] din,
-output logic [M-1:0] dout);
+    // Parámetros para la memoria
+    parameter int N = 8;  // Número de bits para la dirección (256 palabras)
+    parameter int M = 32; // Número de bits para los datos
 
-logic [M-1:0] mem [2**N-1:0]; // Declaración de la memoria como un arreglo de palabras de M bits  
+    // Entradas
+    logic clk;           // Señal de reloj
+    logic we;            // Señal de escritura
+    logic [N-1:0] adr;   // Dirección de la memoria
+    logic [M-1:0] din;   // Datos de entrada
 
-always_ff @(posedge clk) // Bloque secuencial que se ejecuta en el flanco positivo del reloj
-if (we) mem [adr] <= din; // Si we es 1, se escribe el valor de din en la dirección especificada por adr
-assign dout = mem[adr]; // Asignación continua que muestra el valor almacenado en la dirección especificada por adr en dout
-endmodule
+    // Salidas
+    logic [M-1:0] dout;  // Datos de salida
+
+    // Memoria interna: arreglo de 256 palabras de 32 bits
+    logic [M-1:0] mem [0:(1<<N)-1];
+
+    // Proceso de lectura/escritura sincronizado con el reloj
+    always_ff @(posedge clk) begin
+        if (we) begin
+            mem[adr] <= din;  // Escribir en la memoria
+        end else begin
+            dout <= mem[adr]; // Leer de la memoria
+        end
+    end
+
+endclass
