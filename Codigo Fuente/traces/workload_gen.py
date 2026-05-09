@@ -115,15 +115,15 @@ def main():
     print("=" * 60)
     
     # Contention: todos a la misma dirección, patrones alternados
-    contention_file = os.path.join(traces_dir, 'workload_contention_10k.csv')
+    contention_file = os.path.join(traces_dir, f'workload_contention_{NUM_LINES}.csv')
     generate_contention_workload(contention_file)
     
     # Migration: escrituras que rotan entre cores
-    migration_file = os.path.join(traces_dir, 'workload_migration_10k.csv')
+    migration_file = os.path.join(traces_dir, f'workload_migration_{NUM_LINES}.csv')
     generate_migration_workload(migration_file)
     
     # Producer-Consumer: productores escriben, consumidores leen
-    prodcons_file = os.path.join(traces_dir, 'workload_prod-cons_10k.csv')
+    prodcons_file = os.path.join(traces_dir, f'workload_prod-cons_{NUM_LINES}.csv')
     generate_prodcons_workload(prodcons_file)
     
     print("=" * 60)
