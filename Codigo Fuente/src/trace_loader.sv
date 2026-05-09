@@ -3,7 +3,8 @@
  * ARCHIVO: trace_loader.sv
  * DESCRIPCIÓN GENERAL:
  *   Cargador de trazas (memory traces) desde archivo CSV.
- *   Parsea el formato: cycle,core_id,op,address
+ *   Parsea formato principal: core_id,op,address
+ *   y formato legacy: cycle,core_id,op,address
  *   Inyecta solicitudes en la cola de cada core para reproducción.
  *
  * ROL EN EL SISTEMA:
@@ -16,9 +17,12 @@
  *
  * FORMATO DE ARCHIVO:
  *   CSV con encabezado (ignorado) y líneas de formato:
+ *   core_id,op,address
+ *   0,R,0x00001000
+ *   1,W,0x00001000
+ *
+ *   También acepta (legacy):
  *   cycle,core_id,op,address
- *   0,0,R,0x00001000
- *   1,2,W,0x00001000
  *
  * VALIDACIONES:
  *   - core_id en rango 0..3
@@ -56,6 +60,7 @@ class TraceLoader;
     task load_into_cores(Core cores[]);
         int file, r, line_num;
         string line;
+        int cycle_legacy;
         int core_id;
         byte unsigned op_char;
         string op_str;
@@ -95,13 +100,17 @@ class TraceLoader;
             if (line.len() && (line[line.len()-1] == 13))
                 line = line.substr(0, line.len()-1);
 
-            // Parsea línea CSV: core_id,op,address
-            // Nota: usar %c para 'op' evita que %s consuma la coma.
-            r = $sscanf(line, "%d,%c,%s", core_id, op_char, address_str);
-            if (r != 3) begin
-                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 3 campos): %s", line_num, line);
-                skipped++;
-                continue;
+            // Parsea primero formato legacy: cycle,core_id,op,address
+            r = $sscanf(line, "%d,%d,%c,%s", cycle_legacy, core_id, op_char, address_str);
+            if (r != 4) begin
+                // Parsea formato principal: core_id,op,address
+                // Nota: usar %c para 'op' evita que %s consuma la coma.
+                r = $sscanf(line, "%d,%c,%s", core_id, op_char, address_str);
+                if (r != 3) begin
+                    $warning("[TraceLoader] Línea %0d: formato inválido (esperado 3 o 4 campos): %s", line_num, line);
+                    skipped++;
+                    continue;
+                end
             end
 
             // Valida core_id

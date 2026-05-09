@@ -33,6 +33,8 @@ module cache_tb;
     Cache cache1; // MSI
     Cache cache2; // Firefly
     Cache cache3; // Firefly
+    Bus   bus;
+    EventMonitor fsm_monitor;
 
     // MAILBOXES para comunicación core-cache
     CoreReq_mbx core_mbx[4];
@@ -47,9 +49,6 @@ module cache_tb;
     initial begin
         CoreRequest req;
         BusRequest  bus_req;
-        BusEvent    evt;
-        MemResponse mem_resp;
-
         // Formato de impresión temporal en ns para trazas coherentes en consola.
         $timeformat(-9, 3, " ns", 10);
 
@@ -70,6 +69,13 @@ module cache_tb;
         cache2 = new(2, Cache::FIREFLY, BUS_MBX_DEPTH);
         cache3 = new(3, Cache::FIREFLY, BUS_MBX_DEPTH);
 
+        fsm_monitor = new();
+        fsm_monitor.enable_transition_export("Codigo Fuente/sim_results/fsm_transitions_cache_tb.csv");
+        cache0.fsm_monitor = fsm_monitor;
+        cache1.fsm_monitor = fsm_monitor;
+        cache2.fsm_monitor = fsm_monitor;
+        cache3.fsm_monitor = fsm_monitor;
+
         // Conexiones core-cache y bus
         cache0.from_core = core_mbx[0];
         cache1.from_core = core_mbx[1];
@@ -82,49 +88,27 @@ module cache_tb;
         cache3.to_bus = bus_mbx;
 
         // Cada caché recibe eventos de su propio mailbox
-        foreach (bus_evt_mbx[i]) begin
-            cache0.from_bus = bus_evt_mbx[0];
-            cache1.from_bus = bus_evt_mbx[1];
-            cache2.from_bus = bus_evt_mbx[2];
-            cache3.from_bus = bus_evt_mbx[3];
-        end
+        cache0.from_bus = bus_evt_mbx[0];
+        cache1.from_bus = bus_evt_mbx[1];
+        cache2.from_bus = bus_evt_mbx[2];
+        cache3.from_bus = bus_evt_mbx[3];
 
         // Cada caché recibe respuestas de memoria de su propio mailbox
-        foreach (mem_mbx[i]) begin
-            cache0.from_mem = mem_mbx[0];
-            cache1.from_mem = mem_mbx[1];
-            cache2.from_mem = mem_mbx[2];
-            cache3.from_mem = mem_mbx[3];
-        end
+        cache0.from_mem = mem_mbx[0];
+        cache1.from_mem = mem_mbx[1];
+        cache2.from_mem = mem_mbx[2];
+        cache3.from_mem = mem_mbx[3];
+
+        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, 4);
 
         fork
             cache0.run();
             cache1.run();
             cache2.run();
             cache3.run();
-
-            // BUS DUMMY GLOBAL: simula el bus compartido y la memoria
-            forever begin
-                bus_mbx.get(bus_req);
-
-                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                // broadcast a TODOS
-                evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                foreach (bus_evt_mbx[i]) begin
-                    bus_evt_mbx[i].put(evt);
-                end
-
-                #10;
-
-                // respuesta de memoria al core correcto
-                mem_resp = new(bus_req.address, bus_req.src_core_id);
-                mem_mbx[bus_req.src_core_id].put(mem_resp);
-            end
-
         join_none
+
+        bus.run();
 
         #10;
 
@@ -168,6 +152,14 @@ module cache_tb;
 
         $display("\nFIN TEST COMPLETO");
         #50;
+        cache0.print_metrics();
+        cache1.print_metrics();
+        cache2.print_metrics();
+        cache3.print_metrics();
+        bus.print_metrics();
+        if (fsm_monitor != null) begin
+            fsm_monitor.close();
+        end
         $finish;
     end
 

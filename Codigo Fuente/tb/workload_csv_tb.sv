@@ -36,6 +36,7 @@ module workload_csv_tb;
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
+    Bus   bus;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -44,25 +45,31 @@ module workload_csv_tb;
 
     BusReq_mbx bus_mbx;
 
-    // Monitoreo y exportación
-    TraceExporter exporter;
-    EventMonitor monitor;
+    // Monitoreo FSM (transiciones de estado)
+    EventMonitor fsm_monitor;
 
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus/memoria.
      */
-    task setup_system();
+    task setup_system(Cache::protocol_e protocol_sel);
 
-        bus_mbx = new();
+        bus_mbx = new(BUS_MBX_DEPTH);
+
+        if (fsm_monitor == null) begin
+            fsm_monitor = new();
+            fsm_monitor.enable_transition_export("Codigo Fuente/sim_results/fsm_transitions_workload.csv");
+        end
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::MSI, BUS_MBX_DEPTH);
+            caches[i] = new(i, protocol_sel, BUS_MBX_DEPTH);
             cores[i]  = new(i);
+
+            caches[i].fsm_monitor = fsm_monitor;
 
             cores[i].to_cache = core_to_cache[i];
 
@@ -72,20 +79,18 @@ module workload_csv_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
-        if (monitor == null) begin
-            $fatal(1, "[TopTB] EventMonitor no inicializado");
-        end
+        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
 
-        // CACHES y BUS/MEMORIA en paralelo
+        // CACHES en paralelo
         fork
             caches[0].run();
             caches[1].run();
             caches[2].run();
             caches[3].run();
-
-            // BUS + MEMORIA + EXPORT: monitoriza el bus, reenvía eventos y responde memoria
-            monitor.monitor_bus(bus_mbx, bus_evt_mbx, mem_mbx);
         join_none
+
+        // BUS real: arbitraje RR + broadcast + BW modelado + métricas
+        bus.run();
 
         #10;
 
@@ -110,7 +115,7 @@ module workload_csv_tb;
      */
     task load_traces_from_file(string trace_file);
         TraceLoader loader;
-        static string default_trace = "../traces/workload_contention.csv";
+        static string default_trace = "Codigo Fuente/traces/workload_contention.csv";
 
         // Si no se proporciona archivo, usa default
         if (trace_file == "") begin
@@ -127,6 +132,8 @@ module workload_csv_tb;
     initial begin
 
         string trace_file;
+        string protocol_name;
+        Cache::protocol_e protocol_sel;
 
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
@@ -141,22 +148,38 @@ module workload_csv_tb;
             trace_file = "";
         end
 
-        exporter = new("../sim_results/trace_output.csv");
-        monitor = new();
-        monitor.exporter = exporter;
+        protocol_name = "FIREFLY";
+        if ($value$plusargs("PROTOCOL=%s", protocol_name)) begin
+            if (protocol_name == "MSI" || protocol_name == "msi") begin
+                protocol_sel = Cache::MSI;
+            end else begin
+                protocol_sel = Cache::FIREFLY;
+            end
+        end else begin
+            protocol_sel = Cache::FIREFLY;
+        end
 
         // Ejecuta un único escenario cargando desde archivo
-        setup_system();
+        setup_system(protocol_sel);
 
         load_traces_from_file(trace_file);
 
         $display("\n========== EJECUTANDO TRACES ==========\n");
 
         run_cores();
-        #100;
+        #150;
 
-        monitor.print_stats();
-        exporter.close();
+        $display("\n========== METRICAS CACHES ==========");
+        foreach (caches[i]) begin
+            caches[i].print_metrics();
+        end
+
+        $display("\n========== METRICAS BUS ==========");
+        bus.print_metrics();
+
+        if (fsm_monitor != null) begin
+            fsm_monitor.close();
+        end
 
         $display("\n========== FIN SIMULACION ==========");
         $finish;
