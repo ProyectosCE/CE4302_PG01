@@ -54,6 +54,7 @@ virtual class ProtocolBase;
         
         ref int bus_stall_count,
         ref real total_bus_stall_time,
+        ref real max_bus_stall_time,
         input int BUS_MBX_DEPTH,
         input EventMonitor transition_monitor
     );

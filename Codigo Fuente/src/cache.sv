@@ -283,6 +283,7 @@ class Cache;
 
                 total_bus_stalls,
                 total_bus_stall_time,
+                max_bus_stall_time,
                 bus_mbx_depth,
                 fsm_monitor
             );

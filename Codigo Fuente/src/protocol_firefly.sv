@@ -45,12 +45,24 @@ class ProtocolFirefly extends ProtocolBase;
 
         ref int bus_stall_count,
         ref real total_bus_stall_time,
+        ref real max_bus_stall_time,
         input int BUS_MBX_DEPTH,
         input EventMonitor transition_monitor
     );
         BusRequest bus_req;
         MemResponse mem_resp;
         bit hit;
+
+
+        /*        * NOTA DE IMPLEMENTACIÓN:
+         *   - La lógica de medición de stalls de bus se ha integrado directamente en el método send_bus_request.
+         *   - Esto permite que cada protocolo (MSI, Firefly) mida de manera consistente el tiempo de espera en el bus sin necesidad de modificar la interfaz del método handle_core_request.
+         *   - La variable max_bus_stall_time se actualiza dentro de send_bus_request si el stall actual supera el máximo registrado.
+         */
+         /* Por qué se añade esta lógica aquí? Para permitir que la lógica de protocolo mida stalls específicos de cada solicitud sin necesidad de modificar la interfaz del método. */
+        real stall_start;
+        real stall_end;
+        real stall_time;
 
         hit = (line.valid && line.tag == tag && line.state != Invalid);
 
@@ -69,8 +81,24 @@ class ProtocolFirefly extends ProtocolBase;
                 // Escritura sobre línea compartida: update por BusUpd
                 if (line.state == Shared) begin
                     bus_req = new(BusUpd, req.address, cache_id);
+                    
+                    
+                    
+                    stall_start = $realtime;
+
                     send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
 
+                    stall_end = $realtime;
+                    stall_time = stall_end - stall_start;
+
+                    bus_stall_count++;
+                    total_bus_stall_time += stall_time;
+
+                    if (stall_time > max_bus_stall_time)
+                        max_bus_stall_time = stall_time;
+
+
+                        
                     // Permanece en estado Shared (Firefly)
                 end
             end
@@ -87,8 +115,25 @@ class ProtocolFirefly extends ProtocolBase;
 
                 old_state = line.state;
                 bus_req = new(BusRd, req.address, cache_id);
+                
+                
+                
+                stall_start = $realtime;
+
                 send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
+
+                stall_end = $realtime;
+                stall_time = stall_end - stall_start;
+
+                bus_stall_count++;
+                total_bus_stall_time += stall_time;
+
+                if (stall_time > max_bus_stall_time)
+                    max_bus_stall_time = stall_time;
+
+
+
 
                 line.tag   = tag;
                 line.valid = 1;
@@ -106,8 +151,24 @@ class ProtocolFirefly extends ProtocolBase;
 
                 old_state = line.state;
                 bus_req = new(BusRdX, req.address, cache_id);
+                
+                
+                stall_start = $realtime;
+
                 send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
+
+                stall_end = $realtime;
+                stall_time = stall_end - stall_start;
+
+                bus_stall_count++;
+                total_bus_stall_time += stall_time;
+
+                if (stall_time > max_bus_stall_time)
+                    max_bus_stall_time = stall_time;
+
+
+
 
                 line.tag   = tag;
                 line.valid = 1;
