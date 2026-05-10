@@ -362,6 +362,10 @@ def generate_prodcons_workload(outdir, n_inst, cores):
 
     producers = {0, 1}
 
+    # Una única dirección compartida para productores y consumidores.
+    # Se escoge una vez por generación del workload.
+    shared_address = random.choice(ADDR_POOL)
+
     for pe_id in range(cores):
         output_file = outdir / f"{workload_name}_{n_inst}_PE{pe_id}.csv"
 
@@ -370,11 +374,7 @@ def generate_prodcons_workload(outdir, n_inst, cores):
             writer.writerow(["op", "address"])
 
             for inst_idx in range(n_inst):
-                address = address_by_block(
-                    inst_idx=inst_idx,
-                    block_size=16,
-                    offset=1
-                )
+                address = shared_address
 
                 if pe_id in producers:
                     op = "W"
@@ -385,6 +385,7 @@ def generate_prodcons_workload(outdir, n_inst, cores):
 
         print(f"✓ {output_file}")
 
+    print(f"[prod-cons] Dirección compartida usada por productores y consumidores: {shared_address}")
 
 def generate_migration_workload(outdir, n_inst, cores):
     """
