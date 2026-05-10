@@ -31,3 +31,4 @@ vsim.dbg
 # Temporal para entrega final
 Demostraciones/Entrega_Final/*.md
 sim_results/
+Codigo Fuente/traces/traces_gen/
