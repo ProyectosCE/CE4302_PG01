@@ -142,41 +142,71 @@ class ProtocolFirefly extends ProtocolBase;
                     transition_monitor.record_transition($rtoi($realtime), cache_id, req.address, index, old_state, line.state, "PrRd MISS -> BusRd");
                 end
             end
-            else begin // PrWr
-                state_e old_state;
+            else begin // PrWr MISS
+                        state_e old_state;
 
-                write_misses++;
-                $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
-                    $realtime, cache_id, req.address);
+                        write_misses++;
+                        $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRd + BusUpd",
+                            $realtime, cache_id, req.address);
 
-                old_state = line.state;
-                bus_req = new(BusRdX, req.address, cache_id);
-                
-                
-                stall_start = $realtime;
+                        old_state = line.state;
 
-                send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
-                from_mem.get(mem_resp);
+                        stall_start = $realtime;
 
-                stall_end = $realtime;
-                stall_time = stall_end - stall_start;
+                        // 1. Primero se trae el bloque con BusRd
+                        bus_req = new(BusRd, req.address, cache_id);
 
-                bus_stall_count++;
-                total_bus_stall_time += stall_time;
+                        send_bus_request(
+                            cache_id,
+                            bus_req,
+                            to_bus,
+                            bus_stall_count,
+                            total_bus_stall_time,
+                            BUS_MBX_DEPTH
+                        );
 
-                if (stall_time > max_bus_stall_time)
-                    max_bus_stall_time = stall_time;
+                        from_mem.get(mem_resp);
 
+                        // 2. Luego se emite BusUpd para difundir la escritura
+                        bus_req = new(BusUpd, req.address, cache_id);
 
+                        send_bus_request(
+                            cache_id,
+                            bus_req,
+                            to_bus,
+                            bus_stall_count,
+                            total_bus_stall_time,
+                            BUS_MBX_DEPTH
+                        );
 
+                        stall_end = $realtime;
+                        stall_time = stall_end - stall_start;
 
-                line.tag   = tag;
-                line.valid = 1;
-                line.state = Modified;
-                if (transition_monitor != null) begin
-                    transition_monitor.record_transition($rtoi($realtime), cache_id, req.address, index, old_state, line.state, "PrWr MISS -> BusRdX");
-                end
-            end
+                        bus_stall_count++;
+                        total_bus_stall_time += stall_time;
+
+                        if (stall_time > max_bus_stall_time)
+                            max_bus_stall_time = stall_time;
+
+                        line.tag   = tag;
+                        line.valid = 1;
+
+                        // En este modelo Firefly simplificado se deja Shared porque la escritura
+                        // se propaga por BusUpd y la memoria también queda actualizada.
+                        line.state = Shared;
+
+                        if (transition_monitor != null) begin
+                            transition_monitor.record_transition(
+                                $rtoi($realtime),
+                                cache_id,
+                                req.address,
+                                index,
+                                old_state,
+                                line.state,
+                                "PrWr MISS -> BusRd + BusUpd"
+                            );
+                        end
+                    end
         end
     endtask
 

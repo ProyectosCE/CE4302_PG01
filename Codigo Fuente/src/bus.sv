@@ -422,7 +422,7 @@ class Bus;
 			#(latency);
 
 			// Reenvía a memoria solo las transacciones que requieren acceso a memoria.
-			if (req.req_type == BusRd || req.req_type == BusRdX) begin
+			if (req.req_type == BusRd || req.req_type == BusRdX || req.req_type == BusUpd) begin
 				total_mem_accesses++;
 				mem_req_mbx.put(req);
 			end

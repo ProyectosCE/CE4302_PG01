@@ -133,11 +133,14 @@ class Memory;
             # (service_time);
 
             // Responder al core origen
-            if (req.src_core_id >= 0 && req.src_core_id < this.mem_mbx.size()) begin
-                MemResponse resp = new(req.address, req.src_core_id);
-                this.mem_mbx[req.src_core_id].put(resp);
-            end else begin
-                $display("@%0t [MEM] WARN src_core_id fuera de rango=%0d", $realtime, req.src_core_id);
+            if (req.req_type == BusRd || req.req_type == BusRdX) begin
+                if (req.src_core_id >= 0 && req.src_core_id < this.mem_mbx.size()) begin
+                    MemResponse resp = new(req.address, req.src_core_id);
+                    this.mem_mbx[req.src_core_id].put(resp);
+                end else begin
+                    $display("@%0t [MEM] WARN src_core_id fuera de rango=%0d",
+                        $realtime, req.src_core_id);
+                end
             end
 
             t_done = $realtime;
