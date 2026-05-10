@@ -57,11 +57,9 @@ class TraceLoader;
      *        Formato esperado: core_id,op,address
      * @param cores Arreglo de cores a los que se asignarán las solicitudes
      */
-    task load_into_cores(Core cores[]);
+    task load_into_core(Core core, int core_id);
         int file, r, line_num;
         string line;
-        int cycle_legacy;
-        int core_id;
         byte unsigned op_char;
         string op_str;
         string address_str;
@@ -100,22 +98,10 @@ class TraceLoader;
             if (line.len() && (line[line.len()-1] == 13))
                 line = line.substr(0, line.len()-1);
 
-            // Parsea primero formato legacy: cycle,core_id,op,address
-            r = $sscanf(line, "%d,%d,%c,%s", cycle_legacy, core_id, op_char, address_str);
-            if (r != 4) begin
-                // Parsea formato principal: core_id,op,address
-                // Nota: usar %c para 'op' evita que %s consuma la coma.
-                r = $sscanf(line, "%d,%c,%s", core_id, op_char, address_str);
-                if (r != 3) begin
-                    $warning("[TraceLoader] Línea %0d: formato inválido (esperado 3 o 4 campos): %s", line_num, line);
-                    skipped++;
-                    continue;
-                end
-            end
-
-            // Valida core_id
-            if (core_id < 0 || core_id >= cores.size()) begin
-                $warning("[TraceLoader] Línea %0d: core_id fuera de rango: %0d", line_num, core_id);
+            // Formato nuevo: op,address
+            r = $sscanf(line, "%c,%s", op_char, address_str);
+            if (r != 2) begin
+                $warning("[TraceLoader] Línea %0d: formato inválido (esperado op,address): %s", line_num, line);
                 skipped++;
                 continue;
             end
@@ -149,7 +135,7 @@ class TraceLoader;
                 req = new(PrWr, address, core_id);
             end
 
-            cores[core_id].add_request(req);
+            core.add_request(req);
             total_reqs++;
         end
 

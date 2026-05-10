@@ -34,6 +34,7 @@ module cache_tb;
     Cache cache2; // Firefly
     Cache cache3; // Firefly
     Bus   bus;
+    Memory memory;
     EventMonitor fsm_monitor;
 
     // MAILBOXES para comunicación core-cache
@@ -41,6 +42,7 @@ module cache_tb;
 
     // BUS: mailboxes para solicitudes y eventos
     BusReq_mbx  bus_mbx;
+    BusReq_mbx mem_req_mbx;
     BusEvt_mbx  bus_evt_mbx[4];
 
     // MEM: mailboxes para respuestas de memoria
@@ -62,6 +64,7 @@ module cache_tb;
         foreach (mem_mbx[i]) mem_mbx[i] = new();
 
         bus_mbx = new();
+        mem_req_mbx = new();
 
         // Crear instancias de caches con diferentes protocolos
         cache0 = new(0, Cache::MSI, BUS_MBX_DEPTH);
@@ -99,7 +102,8 @@ module cache_tb;
         cache2.from_mem = mem_mbx[2];
         cache3.from_mem = mem_mbx[3];
 
-        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, 4);
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, 4);
+        memory = new(mem_req_mbx, mem_mbx, 4, 8.0);
 
         fork
             cache0.run();
@@ -109,6 +113,7 @@ module cache_tb;
         join_none
 
         bus.run();
+        memory.run();
 
         #10;
 

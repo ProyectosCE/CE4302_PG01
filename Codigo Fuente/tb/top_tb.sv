@@ -37,6 +37,7 @@ module top_tb;
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
     Bus   bus;
+    Memory memory;
     EventMonitor fsm_monitor;
 
     // Mailboxes para comunicación entre módulos
@@ -45,7 +46,7 @@ module top_tb;
     MemResp_mbx mem_mbx       [NUM_CORES];
 
     BusReq_mbx bus_mbx;
-
+    BusReq_mbx mem_req_mbx;
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus real.
@@ -53,6 +54,7 @@ module top_tb;
     task setup_system();
 
         bus_mbx = new(BUS_MBX_DEPTH);
+        mem_req_mbx = new(BUS_MBX_DEPTH);
 
         if (fsm_monitor == null) begin
             fsm_monitor = new();
@@ -78,7 +80,8 @@ module top_tb;
         end
 
         // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
-        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
+        memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
 
         // CACHES en paralelo
         fork
@@ -90,6 +93,7 @@ module top_tb;
 
         // BUS REAL en ejecución concurrente.
         bus.run();
+        memory.run();
 
         #10;
 

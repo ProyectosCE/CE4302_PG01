@@ -12,10 +12,12 @@ module bus_tb;
 	parameter int DRAIN_DELAY = 80;
 
 	BusReq_mbx bus_mbx;
+	BusReq_mbx mem_req_mbx;
 	BusEvt_mbx bus_evt_mbx[NUM_CORES];
 	MemResp_mbx mem_mbx[NUM_CORES];
 
 	Bus bus;
+	Memory memory;
 
 	int evt_count[NUM_CORES];
 	int mem_count[NUM_CORES];
@@ -157,6 +159,7 @@ module bus_tb;
 	// Inicializacion del bus y mailboxes.
 	initial begin
 		bus_mbx = new();
+		mem_req_mbx = new();
 		for (int i = 0; i < NUM_CORES; i++) begin
 			bus_evt_mbx[i] = new();
 			mem_mbx[i] = new();
@@ -173,8 +176,10 @@ module bus_tb;
 		invalid_src_count = 0;
 		rr_imbalance_threshold = 4;
 
-		bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
+		bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
+		memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
 		bus.run();
+		memory.run();
 	end
 
 	// Monitores pasivos de eventos y respuestas.

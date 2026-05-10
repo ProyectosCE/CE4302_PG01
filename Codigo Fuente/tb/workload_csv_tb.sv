@@ -37,6 +37,7 @@ module workload_csv_tb;
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
     Bus   bus;
+    Memory memory;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -44,6 +45,7 @@ module workload_csv_tb;
     MemResp_mbx mem_mbx       [NUM_CORES];
 
     BusReq_mbx bus_mbx;
+    BusReq_mbx mem_req_mbx;
 
     // Monitoreo FSM (transiciones de estado)
     EventMonitor fsm_monitor;
@@ -55,6 +57,7 @@ module workload_csv_tb;
     task setup_system(Cache::protocol_e protocol_sel);
 
         bus_mbx = new(BUS_MBX_DEPTH);
+        mem_req_mbx = new(BUS_MBX_DEPTH);
 
         if (fsm_monitor == null) begin
             fsm_monitor = new();
@@ -79,7 +82,13 @@ module workload_csv_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
-        bus = new(bus_mbx, bus_evt_mbx, mem_mbx, NUM_CORES);
+        // Instancia de Bus: arbitraje RR + broadcast + BW modelado + métricas
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
+
+        // Instancia de Memory: 4 cores, 8 bytes/ns ancho de banda
+        memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
+
+        //instancia de memoria
 
         // CACHES en paralelo
         fork
@@ -91,6 +100,9 @@ module workload_csv_tb;
 
         // BUS real: arbitraje RR + broadcast + BW modelado + métricas
         bus.run();
+
+        // MEMORIA real: procesa solicitudes con latencias modeladas
+        memory.run();
 
         #10;
 
@@ -115,18 +127,25 @@ module workload_csv_tb;
      */
     task load_traces_from_file(string trace_file);
         TraceLoader loader;
-        static string default_trace = "Codigo Fuente/traces/workload_contention.csv";
+        string pe_trace_file;
+        static string default_trace = "../traces/fake/workload_contention_1000000";
 
         // Si no se proporciona archivo, usa default
         if (trace_file == "") begin
             trace_file = default_trace;
         end
 
-        $display("[TopTB] Cargando traces desde: %s", trace_file);
+        $display("[TopTB] Cargando workload base: %s", trace_file);
 
-        loader = new(trace_file);
-        loader.load_into_cores(cores);
-    endtask
+        foreach (cores[i]) begin
+            pe_trace_file = $sformatf("%s_PE%0d.csv", trace_file, i);
+
+            $display("[TopTB] Cargando PE%0d desde: %s", i, pe_trace_file);
+
+            loader = new(pe_trace_file);
+            loader.load_into_core(cores[i], i);
+        end
+endtask
 
     // TEST
     initial begin
@@ -170,8 +189,21 @@ module workload_csv_tb;
 
         $display("\n========== EJECUTANDO TRACES ==========\n");
 
+        // No se hace por tiempo, se espera a que cores procesen todo su trace y luego se espera a que bus y memoria terminen de procesar todas las solicitudes.
+
         run_cores();
-        #150;
+
+        wait (
+            caches[0].get_total_accesses() == cores[0].trace_queue.size() &&
+            caches[1].get_total_accesses() == cores[1].trace_queue.size() &&
+            caches[2].get_total_accesses() == cores[2].trace_queue.size() &&
+            caches[3].get_total_accesses() == cores[3].trace_queue.size()
+        );
+
+        wait (bus.is_idle());
+        wait (memory.is_idle());
+
+        #50;
 
         $display("\n========== METRICAS CACHES ==========");
         foreach (caches[i]) begin
@@ -181,9 +213,14 @@ module workload_csv_tb;
         $display("\n========== METRICAS BUS ==========");
         bus.print_metrics();
 
+        $display("\n========== METRICAS MEMORIA ==========");
+        memory.print_metrics();
+
         if (fsm_monitor != null) begin
             fsm_monitor.close();
         end
+
+        
 
         $display("\n========== FIN SIMULACION ==========");
         $finish;

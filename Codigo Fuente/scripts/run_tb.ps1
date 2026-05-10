@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tbDir = Join-Path $root '..\tb'
 $srcDir = Join-Path $root '..\src'
-$tracesDir = Join-Path $root '..\traces'
+$tracesDir = Join-Path $root '..\traces\traces_gen'
 $simDir = Join-Path $root '..\scripts'
 $resultsDir = Join-Path $root '..\sim_results'
 $runDoPath = Join-Path $root 'run_tb.do'
@@ -104,13 +104,13 @@ if ($tbName -eq 'workload_csv_tb') {
 
     $selectedCsv = Read-Host 'Ingrese el numero del workload CSV que desea usar'
     [int]$selectedCsvInt = -1
-    if (-not [int]::TryParse($selectedCsv, [ref]$selectedCsvInt) -or $selectedCsvInt -lt 0 -or $selectedCsvInt -ge $workloadGroups.Count) { {
+    if (-not [int]::TryParse($selectedCsv, [ref]$selectedCsvInt) -or $selectedCsvInt -lt 0 -or $selectedCsvInt -ge $workloadGroups.Count) {
         Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
         exit 1
     }
 
     $workloadBase = $workloadGroups[$selectedCsvInt]
-    $traceRel = "../traces/$workloadBase"
+    $traceRel = "../traces/traces_gen/$workloadBase"
 
     $doLines = @(
         'vlib work',
