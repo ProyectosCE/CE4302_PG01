@@ -234,6 +234,16 @@ package types_pkg;
         endfunction
     endclass
 
+    class CoreAck;
+        int core_id;
+
+        function new(int core_id);
+            this.core_id = core_id;
+        endfunction
+    endclass
+
+    typedef mailbox #(CoreAck) CoreAck_mbx;
+
 
     // MAILBOXES
 

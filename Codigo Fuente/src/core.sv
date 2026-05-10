@@ -61,6 +61,11 @@ class Core;
      */
     CoreReq_mbx to_cache;
 
+    /**
+     * @brief Mailbox para recibir acknowledgments de la caché
+     */
+    CoreAck_mbx from_cache;
+
 
     /**
      * @brief Cola de solicitudes (trace) que el core enviará a la caché.
@@ -110,6 +115,7 @@ class Core;
                 req.address);
 
             to_cache.put(req);
+            from_cache.get(ack);
 
             #10; // delay entre instrucciones (simulación)
         end

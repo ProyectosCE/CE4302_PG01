@@ -44,6 +44,9 @@ module workload_csv_tb;
     BusEvt_mbx  bus_evt_mbx   [NUM_CORES];
     MemResp_mbx mem_mbx       [NUM_CORES];
 
+    // Acknowledgments del core para que no envíe solicitudes a la caché más rápido de lo que puede procesarlas
+    CoreAck_mbx cache_to_core [NUM_CORES];
+
     BusReq_mbx bus_mbx;
     BusReq_mbx mem_req_mbx;
 
@@ -68,6 +71,8 @@ module workload_csv_tb;
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
+        foreach (cache_to_core[i]) cache_to_core[i] = new(1);
+
         foreach (cores[i]) begin
             caches[i] = new(i, protocol_sel, BUS_MBX_DEPTH);
             cores[i]  = new(i);
@@ -80,6 +85,10 @@ module workload_csv_tb;
             caches[i].to_bus    = bus_mbx;
             caches[i].from_bus  = bus_evt_mbx[i];
             caches[i].from_mem  = mem_mbx[i];
+
+            cores[i].from_cache = cache_to_core[i];
+            caches[i].to_core   = cache_to_core[i];
+
         end
 
         // Instancia de Bus: arbitraje RR + broadcast + BW modelado + métricas

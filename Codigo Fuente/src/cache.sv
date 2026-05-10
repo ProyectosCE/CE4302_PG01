@@ -120,6 +120,11 @@ class Cache;
     MemResp_mbx from_mem;
 
     /**
+     * @brief Mailbox para enviar acknowledgments al core
+     */
+    CoreAck_mbx to_core;
+
+    /**
      * @brief Array de líneas de caché (directamente mapeada).
      */
     cache_line_t lines[NUM_LINES];
@@ -229,7 +234,7 @@ class Cache;
      */
     virtual task run();
 
-        if (from_core == null || to_bus == null || from_mem == null || from_bus == null) begin
+        if (from_core == null || to_core == null || to_bus == null || from_mem == null || from_bus == null) begin
             $fatal(1, "[Cache %0d] Mailboxes no inicializados", cache_id);
         end
 
@@ -287,6 +292,8 @@ class Cache;
                 bus_mbx_depth,
                 fsm_monitor
             );
+
+            to_core.put(new(cache_id)); // Acknowledge al core que la solicitud fue atendida
         end
     endtask
 
