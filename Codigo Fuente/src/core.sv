@@ -99,8 +99,10 @@ class Core;
      */
     virtual task run();
 
-        if (to_cache == null) begin
-            $fatal(1, "[Core %0d] Mailbox to_cache no inicializado", core_id);
+        CoreAck ack;
+
+        if (to_cache == null || from_cache == null) begin
+            $fatal(1, "[Core %0d] Mailboxes no inicializados", core_id);
         end
 
         $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",

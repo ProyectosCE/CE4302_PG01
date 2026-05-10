@@ -264,6 +264,7 @@ class Cache;
         CoreRequest req;
         int index;
         logic [31:0] tag;
+        CoreAck ack;
 
         forever begin
             from_core.get(req); // Espera solicitud del core
@@ -293,7 +294,8 @@ class Cache;
                 fsm_monitor
             );
 
-            to_core.put(new(cache_id)); // Acknowledge al core que la solicitud fue atendida
+            ack = new(cache_id);
+            to_core.put(ack); // Acknowledge al core que la solicitud fue atendida
         end
     endtask
 
