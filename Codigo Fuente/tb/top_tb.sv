@@ -47,6 +47,10 @@ module top_tb;
 
     BusReq_mbx bus_mbx;
     BusReq_mbx mem_req_mbx;
+
+    MemResp_mbx mem_done_mbx;
+
+
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus real.
@@ -55,6 +59,8 @@ module top_tb;
 
         bus_mbx = new(BUS_MBX_DEPTH);
         mem_req_mbx = new(BUS_MBX_DEPTH);
+        mem_done_mbx = new(BUS_MBX_DEPTH);
+
 
         if (fsm_monitor == null) begin
             fsm_monitor = new();
@@ -80,8 +86,8 @@ module top_tb;
         end
 
         // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
-        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
-        memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, NUM_CORES);
+        memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
 
         // CACHES en paralelo
         fork

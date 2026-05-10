@@ -13,6 +13,7 @@ module bus_tb;
 
 	BusReq_mbx bus_mbx;
 	BusReq_mbx mem_req_mbx;
+	MemResp_mbx mem_done_mbx;
 	BusEvt_mbx bus_evt_mbx[NUM_CORES];
 	MemResp_mbx mem_mbx[NUM_CORES];
 
@@ -27,6 +28,9 @@ module bus_tb;
 	int total_mem_received;
 	int expected_broadcast_events;
 	int expected_mem_responses;
+
+	int expected_mem_accesses;
+
 	int grant_order[$];
 	int starvation_limit;
 	int invalid_src_count;
@@ -39,12 +43,23 @@ module bus_tb;
 		bus_mbx.put(req);
 		sent_count[core_id]++;
 		total_sent++;
+		
+		
 		// Cada solicitud genera una difusion a todos los cores.
 		expected_broadcast_events += NUM_CORES;
-		// La respuesta de memoria solo aplica a BusRd/BusRdX.
+
+		// En este modelo bloqueante, toda transaccion de bus accede a memoria.
+		// BusRd/BusRdX leen memoria y BusUpd actualiza memoria.
+		if (req_type == BusRd || req_type == BusRdX || req_type == BusUpd) begin
+			expected_mem_accesses++;
+		end
+
+		// La respuesta hacia cache solo aplica a BusRd/BusRdX.
 		if (req_type == BusRd || req_type == BusRdX) begin
 			expected_mem_responses++;
 		end
+
+
 		$display("@%0t [TB] SEND core=%0d type=%0d addr=%h", $realtime, core_id, req_type, address);
 	endtask
 
@@ -160,6 +175,7 @@ module bus_tb;
 	initial begin
 		bus_mbx = new();
 		mem_req_mbx = new();
+		mem_done_mbx = new();
 		for (int i = 0; i < NUM_CORES; i++) begin
 			bus_evt_mbx[i] = new();
 			mem_mbx[i] = new();
@@ -172,12 +188,13 @@ module bus_tb;
 		total_mem_received = 0;
 		expected_broadcast_events = 0;
 		expected_mem_responses = 0;
+		expected_mem_accesses = 0;
 		starvation_limit = 6;
 		invalid_src_count = 0;
 		rr_imbalance_threshold = 4;
 
-		bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
-		memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
+		bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, NUM_CORES);
+		memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
 		bus.run();
 		memory.run();
 	end
@@ -242,8 +259,15 @@ module bus_tb;
 		$display("@%0t [TB] RESUMEN_EVENTOS total_enviados=%0d", $realtime, total_sent);
 		$display("@%0t [TB] RESUMEN_TOTALES evt_recibidos=%0d mem_recibidos=%0d",
 			$realtime, total_evt_received, total_mem_received);
-		$display("@%0t [TB] ESPERADOS evt=%0d mem=%0d",
-			$realtime, expected_broadcast_events, expected_mem_responses);
+
+
+		$display("@%0t [TB] ESPERADOS evt=%0d mem_resp=%0d mem_access=%0d",
+			$realtime,
+			expected_broadcast_events,
+			expected_mem_responses,
+			expected_mem_accesses);
+
+
 		for (int i = 0; i < NUM_CORES; i++) begin
 			$display("@%0t [TB] CONTADORES core=%0d enviados=%0d evt=%0d mem=%0d",
 				$realtime, i, sent_count[i], evt_count[i], mem_count[i]);
@@ -267,9 +291,9 @@ module bus_tb;
 		else
 			$display("[OK] Respuestas de memoria dentro del rango esperado");
 
-		if (bus.total_mem_accesses != expected_mem_responses)
+		if (bus.total_mem_accesses != expected_mem_accesses)
 			$error("[TB] Inconsistencia en accesos a memoria: bus=%0d esperado=%0d",
-				bus.total_mem_accesses, expected_mem_responses);
+				bus.total_mem_accesses, expected_mem_accesses);
 
 		active_cores = 0;
 		for (int c = 0; c < NUM_CORES; c++) begin

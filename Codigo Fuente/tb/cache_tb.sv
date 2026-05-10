@@ -48,6 +48,9 @@ module cache_tb;
     // MEM: mailboxes para respuestas de memoria
     MemResp_mbx mem_mbx[4];
 
+    //
+    MemResp_mbx mem_done_mbx;
+
     initial begin
         CoreRequest req;
         BusRequest  bus_req;
@@ -65,6 +68,7 @@ module cache_tb;
 
         bus_mbx = new();
         mem_req_mbx = new();
+        mem_done_mbx = new();
 
         // Crear instancias de caches con diferentes protocolos
         cache0 = new(0, Cache::MSI, BUS_MBX_DEPTH);
@@ -102,8 +106,8 @@ module cache_tb;
         cache2.from_mem = mem_mbx[2];
         cache3.from_mem = mem_mbx[3];
 
-        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, 4);
-        memory = new(mem_req_mbx, mem_mbx, 4, 8.0);
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, 4);
+        memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, 4, 8.0);
 
         fork
             cache0.run();

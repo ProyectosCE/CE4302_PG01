@@ -79,7 +79,7 @@ class ProtocolFirefly extends ProtocolBase;
                     $realtime, cache_id, req.address, line.state);
 
                 // Escritura sobre línea compartida: update por BusUpd
-                if (line.state == Shared) begin
+                
                     bus_req = new(BusUpd, req.address, cache_id);
                     
                     
@@ -100,7 +100,7 @@ class ProtocolFirefly extends ProtocolBase;
 
                         
                     // Permanece en estado Shared (Firefly)
-                end
+                
             end
         end
 
@@ -214,75 +214,98 @@ class ProtocolFirefly extends ProtocolBase;
     /**
      * @brief Lógica Firefly para eventos de snoop.
      */
-    virtual task handle_snoop(
-        input int cache_id,
-        input BusEvent evt,
-        input int index,
-        input logic [31:0] tag,
-        ref cache_line_t line,
+    /**
+ * @brief Lógica Firefly para eventos de snoop.
+ */
+virtual task handle_snoop(
+    input int cache_id,
+    input BusEvent evt,
+    input int index,
+    input logic [31:0] tag,
+    ref cache_line_t line,
 
-        ref int snoop_busrd,
-        ref int snoop_busrdx,
-        ref int snoop_busupd,
+    ref int snoop_busrd,
+    ref int snoop_busrdx,
+    ref int snoop_busupd,
 
-        ref int invalidations_received,
-        ref int updates_received,
+    ref int invalidations_received,
+    ref int updates_received,
 
-        ref int writebacks,
-        input EventMonitor transition_monitor
-    );
-        // Solo procesa si la línea es válida y el tag coincide
-        if (!(line.valid && line.tag == tag)) begin
-            return;
+    ref int writebacks,
+    input EventMonitor transition_monitor
+);
+    state_e old_state;
+
+    // Si la línea no está válida o el tag no coincide, no hay copia local.
+    if (!(line.valid && line.tag == tag && line.state != Invalid)) begin
+        return;
+    end
+
+    case (evt.req_type)
+
+        BusRd: begin
+            snoop_busrd++;
+
+            old_state  = line.state;
+            line.state = Shared;
+
+            $display("@%0t [Cache %0d] SNOOP BusRd -> permanece Shared",
+                $realtime, cache_id);
+
+            if (transition_monitor != null) begin
+                transition_monitor.record_transition(
+                    $rtoi($realtime),
+                    cache_id,
+                    evt.address,
+                    index,
+                    old_state,
+                    line.state,
+                    "Snoop BusRd -> Shared"
+                );
+            end
         end
 
-        case (evt.req_type)
-            // BusRd
-            BusRd: begin
-                snoop_busrd++;
-                if (line.state == Modified) begin
-                    state_e old_state;
+        BusUpd: begin
+            snoop_busupd++;
+            updates_received++;
 
-                    old_state = line.state;
-                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified -> Shared (WB)",
-                        $realtime, cache_id);
-                    writebacks++;
-                    line.state = Shared;
-                    if (transition_monitor != null) begin
-                        transition_monitor.record_transition($rtoi($realtime), cache_id, evt.address, index, old_state, line.state, "Snoop BusRd");
-                    end
-                end
+            old_state  = line.state;
+            line.state = Shared;
+
+            $display("@%0t [Cache %0d] SNOOP BusUpd -> update recibido, permanece Shared",
+                $realtime, cache_id);
+
+            // Si BusEvent tiene campo de dato, aquí debería hacerse:
+            // line.data = evt.data;
+
+            if (transition_monitor != null) begin
+                transition_monitor.record_transition(
+                    $rtoi($realtime),
+                    cache_id,
+                    evt.address,
+                    index,
+                    old_state,
+                    line.state,
+                    "Snoop BusUpd -> Shared"
+                );
             end
+        end
 
-            // BusRdX
-            BusRdX: begin
-                snoop_busrdx++;
-                if (line.state == Shared || line.state == Modified) begin
-                    state_e old_state;
+        BusRdX: begin
+            snoop_busrdx++;
 
-                    old_state = line.state;
-                    $display("@%0t [Cache %0d] SNOOP BusRdX -> Invalid",
-                        $realtime, cache_id);
-                    invalidations_received++;
-                    line.state = Invalid;
-                    line.valid = 0;
-                    if (transition_monitor != null) begin
-                        transition_monitor.record_transition($rtoi($realtime), cache_id, evt.address, index, old_state, line.state, "Snoop BusRdX");
-                    end
-                end
-            end
+            $display("@%0t [Cache %0d] WARNING: SNOOP BusRdX recibido en Firefly simplificado. No se invalida.",
+                $realtime, cache_id);
 
-            // BusUpd
-            BusUpd: begin
-                snoop_busupd++;
-                updates_received++;
-                if (line.state == Shared) begin
-                    $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece Shared",
-                        $realtime, cache_id);
-                end
-            end
-        endcase
+            // En Firefly simplificado no se invalida por BusRdX.
+            // invalidations_received no se incrementa aquí.
+        end
 
-    endtask
+        default: begin
+            // No action
+        end
+    endcase
+
+endtask
 
 endclass

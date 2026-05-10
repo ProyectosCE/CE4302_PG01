@@ -57,8 +57,16 @@ class Bus;
 	/** @brief Buzones de difusion hacia caches (uno por core). */
 	BusEvt_mbx bus_evt_mbx[];
 
-	/** @brief Buzones de respuesta desde memoria hacia caches (uno por core). */
+	/** @brief Buzon de solicitudes desde el bus hacia memoria. */
 	BusReq_mbx mem_req_mbx;
+
+	/**
+	* @brief Ack de memoria hacia el bus.
+	*
+	* Indica que la operación de memoria terminó.
+	* Se usa para que BusRd, BusRdX y BusUpd sean realmente bloqueantes.
+	*/
+	MemResp_mbx mem_done_mbx;
 
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
@@ -151,6 +159,7 @@ class Bus;
 		BusReq_mbx bus_mbx,
 		BusEvt_mbx bus_evt_mbx[],
 		BusReq_mbx mem_req_mbx,
+		BusReq_mbx mem_done_mbx,
 		int num_cores
 	);
 		int evt_size;
@@ -158,6 +167,7 @@ class Bus;
 		this.busy = 0;
 		this.bus_mbx = bus_mbx;
 		this.mem_req_mbx = mem_req_mbx;
+		this.mem_done_mbx = mem_done_mbx;
 		this.num_cores = num_cores;
 		this.rr_ptr = 0;
 		this.bus_bandwidth_bytes_per_ns = 4.0;
@@ -185,6 +195,10 @@ class Bus;
 
 		if (this.mem_req_mbx == null) begin
 			$fatal(1, "[Bus] mem_req_mbx no inicializado");
+		end
+
+		if (this.mem_done_mbx == null) begin
+			$fatal(1, "[Bus] mem_done_mbx no inicializado");
 		end
 
 		if (this.num_cores <= 0) begin
@@ -364,6 +378,11 @@ class Bus;
 	task scheduler_loop();
 		BusRequest req;
 		BusEvent evt;
+
+		// mem_done_mbx es el canal por el cual la memoria notifica que la transaccion ha finalizado.
+		// Esto es necesario para que el bus pueda ser realmente bloqueante, esperando a que la memoria termine antes de conceder la siguiente transaccion.
+		MemResponse mem_done;
+
 		int core_id;
 		int bytes;
 		real t_grant;
@@ -373,6 +392,10 @@ class Bus;
 		real queue_wait;
 		real service_time;
 		real total_latency;
+
+
+
+
 		forever begin
 			// Seleccion de core segun politica RR sobre colas por core.
 			core_id = get_next_core_rr();
@@ -421,15 +444,37 @@ class Bus;
 
 			#(latency);
 
-			// Reenvía a memoria solo las transacciones que requieren acceso a memoria.
+			// ============================================================
+			// Acceso a memoria bloqueante
+			// ============================================================
+			// En el modelo Firefly simplificado write-through/update-memory,
+			// el bus no debe liberar la siguiente transacción hasta que memoria
+			// confirme que terminó.
+			//
+			// Esto evita que un BusUpd pase mientras una caché todavía está
+			// esperando completar un BusRd previo para la misma línea.
+			// ============================================================
 			if (req.req_type == BusRd || req.req_type == BusRdX || req.req_type == BusUpd) begin
+
 				total_mem_accesses++;
+
+				$display("@%0t [BUS] MEM_REQ core=%0d type=%0d addr=%h",
+					$realtime, core_id, req.req_type, req.address);
+
 				mem_req_mbx.put(req);
+
+				// Espera confirmación real desde memoria.
+				mem_done_mbx.get(mem_done);
+
+				$display("@%0t [BUS] MEM_DONE core=%0d type=%0d addr=%h",
+					$realtime, core_id, req.req_type, req.address);
+
+				// Delta extra para que la caché solicitante tenga oportunidad
+				// de consumir su MemResponse e instalar la línea.
+				#0;
 			end
 
-			// #0 permite a las caches procesar la respuesta en un ciclo delta.
-			#0;
-
+			// Solo aquí la transacción realmente terminó.
 			t_done = $realtime;
 			// service_time incluye difusion, arbitraje y latencia de transferencia.
 			service_time = t_done - t_grant;
@@ -443,8 +488,8 @@ class Bus;
 				BusUpd: latency_BusUpd += total_latency;
 			endcase
 			// Usa t_done local para reportar el tiempo de fin de la transaccion.
-			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
-				t_done, core_id, req.req_type, req.address, latency, bytes);
+			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h service=%0f ns bytes=%0d",
+    			t_done, core_id, req.req_type, req.address, service_time, bytes);
 
 			busy = 0; // Libera el bus para la siguiente transaccion.
 			-> queue_event; // Notifica al collector que se ha procesado una transaccion y puede haber espacio en las colas internas.
@@ -458,10 +503,11 @@ class Bus;
 	 * @return 1 si el bus esta idle, 0 si hay actividad.
 	 */
 	function bit is_idle();
-    return (bus_mbx.num() == 0) &&
-           !has_pending_requests() &&
-           (mem_req_mbx.num() == 0) &&
-           !busy;
+		return (bus_mbx.num() == 0) &&
+			!has_pending_requests() &&
+			(mem_req_mbx.num() == 0) &&
+			(mem_done_mbx.num() == 0) &&
+			!busy;
 	endfunction
 
 

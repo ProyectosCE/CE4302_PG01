@@ -18,6 +18,11 @@ class Memory;
     // Interfaces
     BusReq_mbx  bus_mbx;       // mailbox para recibir BusRequest
     MemResp_mbx mem_mbx[];     // mailboxes para responder a cada core
+
+    /* @brief Mailbox para recibir ack de memoria hacia el bus (opcional, dependiendo de la implementación del bus) */
+    // Por qué se añade esta mailbox? Para permitir que la memoria notifique al bus cuando una transacción de memoria ha finalizado, lo cual puede ser útil para modelos de bus que requieran saber cuándo se libera el bus después de una transacción que involucra memoria. Esto también permite medir con mayor precisión el tiempo total de servicio de una transacción que incluye acceso a memoria, sin necesidad de modificar la interfaz del bus o las caches.
+    MemResp_mbx mem_done_mbx;  // ack de memoria hacia el bus
+
     int         num_cores;
 
     // Params (bytes)
@@ -51,7 +56,13 @@ class Memory;
     event queue_event;
 
     // Constructor
-    function new(BusReq_mbx bus_mbx, MemResp_mbx mem_mbx_in[], int num_cores = 4, real bandwidth = 8.0);
+    function new(
+            BusReq_mbx bus_mbx,
+            MemResp_mbx mem_mbx_in[],
+            MemResp_mbx mem_done_mbx,
+            int num_cores = 4,
+            real bandwidth = 8.0
+        );
         this.busy = 0;
         this.bus_mbx = bus_mbx;
         this.num_cores = num_cores;
@@ -59,7 +70,7 @@ class Memory;
         for (int i = 0; i < mem_mbx_in.size() && i < this.mem_mbx.size(); i++) begin
             this.mem_mbx[i] = mem_mbx_in[i];
         end
-
+        this.mem_done_mbx = mem_done_mbx;
         this.mem_bandwidth_bytes_per_ns = bandwidth;
 
         // init metrics
@@ -73,6 +84,16 @@ class Memory;
         this.total_total_latency = 0.0;
         this.max_queue_length = 0;
         this.sim_start_time = 0.0;
+
+
+        if (this.bus_mbx == null) begin
+            $fatal(1, "[Memory] bus_mbx no inicializado");
+        end
+
+        if (this.mem_done_mbx == null) begin
+            $fatal(1, "[Memory] mem_done_mbx no inicializado");
+        end
+
     endfunction
 
     // Arranca los procesos internos
@@ -106,6 +127,10 @@ class Memory;
         real queue_wait;
         int bytes;
         real service_time;
+
+        /* Nota: esta implementación asume que la memoria es single-port, es decir, solo puede atender una solicitud a la vez. Si se quisiera modelar una memoria multi-port, habría que modificar la lógica para permitir atender múltiples solicitudes en paralelo, lo cual complicaría la gestión de la cola y las métricas. */
+        MemResponse resp;
+
         forever begin
             if (req_queue.size() == 0) begin
                 @queue_event;
@@ -132,11 +157,20 @@ class Memory;
             // Simula servicio
             # (service_time);
 
-            // Responder al core origen
+            // Crear respuesta/ack para esta transacción.
+            resp = new(req.address, req.src_core_id);
+
+            // Responder a la caché origen solo si es lectura/fill.
             if (req.req_type == BusRd || req.req_type == BusRdX) begin
                 if (req.src_core_id >= 0 && req.src_core_id < this.mem_mbx.size()) begin
-                    MemResponse resp = new(req.address, req.src_core_id);
+
+                    // Primero se entrega el fill a la caché solicitante.
                     this.mem_mbx[req.src_core_id].put(resp);
+
+                    // Delta para que la caché tenga oportunidad de consumir
+                    // la respuesta e instalar la línea antes del ack al bus.
+                    #0;
+
                 end else begin
                     $display("@%0t [MEM] WARN src_core_id fuera de rango=%0d",
                         $realtime, req.src_core_id);
@@ -144,14 +178,22 @@ class Memory;
             end
 
             t_done = $realtime;
+
+
             this.total_service_time += service_time;
             this.total_total_latency += (t_done - req.t_enqueue);
             this.total_accesses++;
 
-            // libera el bus para la siguiente transaccion
+            // La memoria ya terminó esta operación.
             busy = 0;
 
-            $display("@%0t [MEM][DONE] core=%0d type=%0d addr=%h q_wait=%0f svc=%0f", t_done, req.src_core_id, req.req_type, req.address, queue_wait, service_time);
+            // Ack hacia el bus.
+            // Para BusRd/BusRdX confirma que el fill ya fue generado.
+            // Para BusUpd confirma que la escritura/update-memory ya fue aplicada.
+            this.mem_done_mbx.put(resp);
+
+            $display("@%0t [MEM][DONE] core=%0d type=%0d addr=%h q_wait=%0f svc=%0f",
+                t_done, req.src_core_id, req.req_type, req.address, queue_wait, service_time);
         end
     endtask
 

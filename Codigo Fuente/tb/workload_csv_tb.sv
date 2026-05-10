@@ -49,6 +49,9 @@ module workload_csv_tb;
 
     BusReq_mbx bus_mbx;
     BusReq_mbx mem_req_mbx;
+    
+    // Mailbox para que la memoria notifique al bus cuando una transacción de memoria ha finalizado (opcional, dependiendo de la implementación del bus)
+    MemResp_mbx mem_done_mbx;
 
     // Monitoreo FSM (transiciones de estado)
     EventMonitor fsm_monitor;
@@ -61,6 +64,7 @@ module workload_csv_tb;
 
         bus_mbx = new(BUS_MBX_DEPTH);
         mem_req_mbx = new(BUS_MBX_DEPTH);
+        mem_done_mbx = new(BUS_MBX_DEPTH);
 
         if (fsm_monitor == null) begin
             fsm_monitor = new();
@@ -91,13 +95,11 @@ module workload_csv_tb;
 
         end
 
-        // Instancia de Bus: arbitraje RR + broadcast + BW modelado + métricas
-        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, NUM_CORES);
+       
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, NUM_CORES);
 
-        // Instancia de Memory: 4 cores, 8 bytes/ns ancho de banda
-        memory = new(mem_req_mbx, mem_mbx, NUM_CORES, 8.0);
-
-        //instancia de memoria
+        // Instancia de Memory: 4 cores, 8 bytes/ns ancho de banda y mailbox para notificar al bus cuando una transacción de memoria ha finalizado.
+        memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
 
         // CACHES en paralelo
         fork

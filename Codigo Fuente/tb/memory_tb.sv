@@ -11,6 +11,8 @@ module memory_tb;
     BusReq_mbx  bus_mbx;
     MemResp_mbx mem_mbx[NUM_CORES];
 
+    MemResp_mbx mem_done_mbx;
+
     // Memory instance
     Memory memory;
 
@@ -28,12 +30,13 @@ module memory_tb;
 
         // Crear mailboxes
         bus_mbx = new();
+        mem_done_mbx = new();
         for (i = 0; i < NUM_CORES; i++) begin
             mem_mbx[i] = new();
         end
 
         // Instancia de Memory: 4 cores, 8 bytes/ns ancho de banda
-        memory = new(bus_mbx, mem_mbx, NUM_CORES, 8.0);
+        memory = new(bus_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
 
         // Arrancar Memory
         memory.run();
