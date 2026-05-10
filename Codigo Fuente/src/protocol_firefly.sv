@@ -182,7 +182,7 @@ class ProtocolFirefly extends ProtocolBase;
                         stall_end = $realtime;
                         stall_time = stall_end - stall_start;
 
-                        bus_stall_count++;
+                        bus_stall_count+=2; // Contabiliza ambos accesos al bus
                         total_bus_stall_time += stall_time;
 
                         if (stall_time > max_bus_stall_time)
