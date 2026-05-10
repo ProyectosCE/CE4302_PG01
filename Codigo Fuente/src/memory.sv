@@ -29,6 +29,10 @@ class Memory;
     // Cola interna de solicitudes
     BusRequest req_queue[$];
 
+
+    // Bit para idle
+    bit busy=0;
+
     // Métricas
     int total_accesses;
     int total_reads;
@@ -48,6 +52,7 @@ class Memory;
 
     // Constructor
     function new(BusReq_mbx bus_mbx, MemResp_mbx mem_mbx_in[], int num_cores = 4, real bandwidth = 8.0);
+        this.busy = 0;
         this.bus_mbx = bus_mbx;
         this.num_cores = num_cores;
         this.mem_mbx = new[mem_mbx_in.size()];
@@ -108,6 +113,7 @@ class Memory;
             end
 
             req = req_queue.pop_front();
+            busy = 1; // Marca la memoria como ocupada mientras procesa esta solicitud.
             t_start = $realtime;
             queue_wait = t_start - req.t_enqueue;
             this.total_queue_wait_time += queue_wait;
@@ -139,9 +145,19 @@ class Memory;
             this.total_total_latency += (t_done - req.t_enqueue);
             this.total_accesses++;
 
+            // libera el bus para la siguiente transaccion
+            busy = 0;
+
             $display("@%0t [MEM][DONE] core=%0d type=%0d addr=%h q_wait=%0f svc=%0f", t_done, req.src_core_id, req.req_type, req.address, queue_wait, service_time);
         end
     endtask
+
+
+    function bit is_idle();
+        return (bus_mbx.num() == 0) &&
+            (req_queue.size() == 0) &&
+            !busy;
+    endfunction
 
     function int get_transaction_size(BusRequest req);
         case (req.req_type)
