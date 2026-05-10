@@ -37,6 +37,7 @@ Workloads generados:
 import csv
 import os
 import argparse
+import random
 from pathlib import Path
 
 
@@ -99,8 +100,8 @@ def read_config(config_path):
     n_inst = int(config["N_inst"].replace("_", ""))
     cores = int(config["Cores"].replace("_", ""))
 
-    if n_inst <= 0:
-        raise ValueError("N_inst debe ser mayor que cero")
+    if n_inst <= 10:
+        raise ValueError("N_inst debe ser mayor que 10 para generar un workload representativo")
 
     if cores <= 0:
         raise ValueError("Cores debe ser mayor que cero")
@@ -134,27 +135,184 @@ def write_row(writer, op, address):
     writer.writerow([op, address])
 
 
+
+
 def generate_contention_workload(outdir, n_inst, cores):
     """
     Workload 4.1:
     Variable compartida con alta contención.
 
-    Lógica:
-    - Todos los PEs acceden a la misma dirección cacheable compartida.
-    - Cada PE ejecuta lecturas y escrituras frecuentes.
-    - La dirección cambia por bloques entre 0x1000, 0x2000 y 0x3000.
-    - Se fuerza contención porque todos los PEs usan la misma dirección
-      durante el mismo bloque lógico.
+    Además del patrón normal de contención, este generador inserta
+    obligatoriamente al menos una sección donde uno o más PEs mantienen
+    ownership en estado Modified sobre direcciones distintas.
 
-    Patrón:
-    - Aproximadamente 2/3 lecturas.
-    - Aproximadamente 1/3 escrituras.
-    - Las escrituras se desfasan por PE para provocar invalidaciones
-      o actualizaciones frecuentes.
+    Secuencia mínima garantizada para estado M:
+        W, W, R, W, R
+
+    La sección de estado M:
+    - Tiene longitud mínima 5.
+    - Tiene longitud máxima 20.
+    - Puede aparecer más de una vez.
+    - Usa direcciones distintas entre PEs activos para evitar interferencia.
+    - Mientras un PE está trabajando una dirección en M, los otros PEs usan
+      otras direcciones disponibles.
     """
+
+    if n_inst < 10:
+        raise ValueError("N_inst debe ser mayor o igual que 10 para generar secciones en estado M")
+
+    if cores <= 0:
+        raise ValueError("La cantidad de cores debe ser mayor que cero")
 
     workload_name = "workload_contention"
 
+    # Matriz temporal:
+    # traces[pe_id][inst_idx] = [op, address]
+    traces = [[] for _ in range(cores)]
+
+    # ------------------------------------------------------------
+    # 1. Generación base: alta contención compartida
+    # ------------------------------------------------------------
+    for inst_idx in range(n_inst):
+        address = address_by_block(
+            inst_idx=inst_idx,
+            block_size=32,
+            offset=0
+        )
+
+        for pe_id in range(cores):
+            if (inst_idx + pe_id) % 3 == 0:
+                op = "W"
+            else:
+                op = "R"
+
+            traces[pe_id].append([op, address])
+
+    # ------------------------------------------------------------
+    # 2. Inserción obligatoria de al menos una sección Modified
+    # ------------------------------------------------------------
+    min_m_len = 5
+    max_m_len = min(20, n_inst)
+
+    m_section_len = random.randint(min_m_len, max_m_len)
+
+    # Debe caber dentro del workload
+    start_idx = random.randint(0, n_inst - m_section_len)
+
+    # Cantidad de PEs que tendrán sección M simultánea.
+    # Limitada por cantidad de cores y cantidad de direcciones.
+    max_active_modified = min(cores, len(ADDR_POOL))
+
+    # Al menos un PE debe tener sección M.
+    active_modified_count = random.randint(1, max_active_modified)
+
+    active_pes = random.sample(range(cores), active_modified_count)
+    active_addresses = random.sample(ADDR_POOL, active_modified_count)
+
+    pe_to_m_address = {
+        pe_id: active_addresses[idx]
+        for idx, pe_id in enumerate(active_pes)
+    }
+
+    # Direcciones auxiliares para PEs que no están en la sección M.
+    # Si no quedan direcciones libres, usan cualquier dirección distinta
+    # cuando sea posible.
+    used_m_addresses = set(active_addresses)
+    free_addresses = [addr for addr in ADDR_POOL if addr not in used_m_addresses]
+
+    # Secuencia mínima obligatoria para garantizar hits en Modified:
+    # Primera W: obtiene M con BusRdX.
+    # Segunda W: hit en M.
+    # R: hit en M.
+    # Tercera W: hit en M.
+    # R: hit en M.
+    base_m_sequence = ["W", "W", "R", "W", "R"]
+
+    # Si la sección es más larga, se extiende con R/W aleatorios,
+    # pero favoreciendo escrituras para observar write hits en M.
+    extra_len = m_section_len - len(base_m_sequence)
+    extra_ops = random.choices(
+        population=["W", "R"],
+        weights=[0.60, 0.40],
+        k=extra_len
+    )
+
+    m_sequence = base_m_sequence + extra_ops
+
+    for local_idx, op in enumerate(m_sequence):
+        inst_idx = start_idx + local_idx
+
+        for pe_id in range(cores):
+            if pe_id in pe_to_m_address:
+                # Este PE mantiene ownership en su dirección privada
+                # durante la sección M.
+                traces[pe_id][inst_idx] = [op, pe_to_m_address[pe_id]]
+            else:
+                # Los demás PEs se mandan a otras direcciones para no invalidar
+                # la línea del PE que está en estado M.
+                if free_addresses:
+                    other_address = random.choice(free_addresses)
+                else:
+                    # Si todas las direcciones están ocupadas por secciones M,
+                    # usa una dirección de ADDR_POOL intentando variar.
+                    other_address = ADDR_POOL[(pe_id + local_idx) % len(ADDR_POOL)]
+
+                other_op = random.choice(["R", "W"])
+                traces[pe_id][inst_idx] = [other_op, other_address]
+
+    # ------------------------------------------------------------
+    # 3. Inserción opcional de más secciones Modified
+    # ------------------------------------------------------------
+    # Para workloads grandes, puede insertar secciones extra.
+    # No es obligatorio, pero ayuda a observar más write hits en M.
+    optional_sections = 0
+
+    if n_inst >= 50:
+        optional_sections = random.randint(0, max(1, n_inst // 200))
+
+    for _ in range(optional_sections):
+        m_section_len = random.randint(min_m_len, max_m_len)
+        start_idx = random.randint(0, n_inst - m_section_len)
+
+        active_modified_count = random.randint(1, max_active_modified)
+        active_pes = random.sample(range(cores), active_modified_count)
+        active_addresses = random.sample(ADDR_POOL, active_modified_count)
+
+        pe_to_m_address = {
+            pe_id: active_addresses[idx]
+            for idx, pe_id in enumerate(active_pes)
+        }
+
+        used_m_addresses = set(active_addresses)
+        free_addresses = [addr for addr in ADDR_POOL if addr not in used_m_addresses]
+
+        extra_len = m_section_len - len(base_m_sequence)
+        extra_ops = random.choices(
+            population=["W", "R"],
+            weights=[0.60, 0.40],
+            k=extra_len
+        )
+
+        m_sequence = base_m_sequence + extra_ops
+
+        for local_idx, op in enumerate(m_sequence):
+            inst_idx = start_idx + local_idx
+
+            for pe_id in range(cores):
+                if pe_id in pe_to_m_address:
+                    traces[pe_id][inst_idx] = [op, pe_to_m_address[pe_id]]
+                else:
+                    if free_addresses:
+                        other_address = random.choice(free_addresses)
+                    else:
+                        other_address = ADDR_POOL[(pe_id + local_idx) % len(ADDR_POOL)]
+
+                    other_op = random.choice(["R", "W"])
+                    traces[pe_id][inst_idx] = [other_op, other_address]
+
+    # ------------------------------------------------------------
+    # 4. Escritura de archivos CSV por PE
+    # ------------------------------------------------------------
     for pe_id in range(cores):
         output_file = outdir / f"{workload_name}_{n_inst}_PE{pe_id}.csv"
 
@@ -162,25 +320,16 @@ def generate_contention_workload(outdir, n_inst, cores):
             writer = csv.writer(f)
             writer.writerow(["op", "address"])
 
-            for inst_idx in range(n_inst):
-                address = address_by_block(
-                    inst_idx=inst_idx,
-                    block_size=32,
-                    offset=0
-                )
-
-                # Patrón de alta contención:
-                # Cada PE alterna lecturas y escrituras, pero no todos escriben
-                # exactamente en la misma posición. Esto genera tráfico coherente.
-                if (inst_idx + pe_id) % 3 == 0:
-                    op = "W"
-                else:
-                    op = "R"
-
+            for op, address in traces[pe_id]:
                 write_row(writer, op, address)
 
         print(f"✓ {output_file}")
 
+    print(
+        f"[contention] Sección M obligatoria: "
+        f"start={start_idx}, len={m_section_len}, "
+        f"active_pes={active_pes}, addresses={active_addresses}"
+    )
 
 def generate_prodcons_workload(outdir, n_inst, cores):
     """
