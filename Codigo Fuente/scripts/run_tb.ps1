@@ -85,26 +85,32 @@ Write-Host "Protocolo seleccionado: $protocolName" -ForegroundColor Green
 # Compilar primero los packages, luego el resto de los archivos
 if ($tbName -eq 'workload_csv_tb') {
     # Menú de workloads CSV
-    $csvFiles = Get-ChildItem -Path $tracesDir -Filter '*.csv' | Select-Object -ExpandProperty Name
-    if (-not $csvFiles) {
-        Write-Host 'No workload CSV files (.csv) found in traces/ folder.' -ForegroundColor Red
+    $csvFiles = Get-ChildItem -Path $tracesDir -Filter '*.csv'
+
+    $workloadGroups = $csvFiles |
+        Where-Object { $_.BaseName -match '^(.*)_PE\d+$' } |
+        ForEach-Object { $Matches[1] } |
+        Sort-Object -Unique
+
+    if (-not $workloadGroups) {
+        Write-Host 'No workload CSV groups found in traces/ folder.' -ForegroundColor Red
         exit 1
     }
 
     Write-Host 'Workloads disponibles (traces/):' -ForegroundColor Cyan
-    for ($j = 0; $j -lt $csvFiles.Count; $j++) {
-        Write-Host ("[$j] $($csvFiles[$j])")
+    for ($j = 0; $j -lt $workloadGroups.Count; $j++) {
+        Write-Host ("[$j] $($workloadGroups[$j])")
     }
 
     $selectedCsv = Read-Host 'Ingrese el numero del workload CSV que desea usar'
     [int]$selectedCsvInt = -1
-    if (-not [int]::TryParse($selectedCsv, [ref]$selectedCsvInt) -or $selectedCsvInt -lt 0 -or $selectedCsvInt -ge $csvFiles.Count) {
+    if (-not [int]::TryParse($selectedCsv, [ref]$selectedCsvInt) -or $selectedCsvInt -lt 0 -or $selectedCsvInt -ge $workloadGroups.Count) { {
         Write-Host 'Seleccion invalida. Abortando.' -ForegroundColor Red
         exit 1
     }
 
-    $csvName = $csvFiles[$selectedCsvInt]
-    $traceRel = "../traces/$csvName"
+    $workloadBase = $workloadGroups[$selectedCsvInt]
+    $traceRel = "../traces/$workloadBase"
 
     $doLines = @(
         'vlib work',
