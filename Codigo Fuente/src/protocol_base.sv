@@ -129,7 +129,7 @@ virtual class ProtocolBase;
         // Detecta potencial backpressure
         if (occupancy_before >= BUS_MBX_DEPTH) begin
 
-            bus_stall_count++;
+            //bus_stall_count++;
 
             $display(
                 "@%0t [Cache %0d][STALL] waiting_bus type=%0d addr=%h occ=%0d/%0d",
@@ -151,7 +151,7 @@ virtual class ProtocolBase;
 
         stall_time = t_put_end - t_put_start;
 
-        total_bus_stall_time += stall_time;
+        //total_bus_stall_time += stall_time;
 
         $display(
             "@%0t [Cache %0d][PUT] type=%0d addr=%h stall=%0f ns occ_after=%0d",
