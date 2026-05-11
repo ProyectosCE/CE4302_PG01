@@ -48,14 +48,25 @@ import types_pkg::*;
  */
 class Bus;
 
+	/** @brief Indica si el bus esta ocupado procesando una transaccion. */
+	bit busy;
+
 	/** @brief Buzon compartido de entrada desde caches. */
 	BusReq_mbx bus_mbx;
 
 	/** @brief Buzones de difusion hacia caches (uno por core). */
 	BusEvt_mbx bus_evt_mbx[];
 
-	/** @brief Buzones de respuesta desde memoria hacia caches (uno por core). */
-	MemResp_mbx mem_mbx[];
+	/** @brief Buzon de solicitudes desde el bus hacia memoria. */
+	BusReq_mbx mem_req_mbx;
+
+	/**
+	* @brief Ack de memoria hacia el bus.
+	*
+	* Indica que la operación de memoria terminó.
+	* Se usa para que BusRd, BusRdX y BusUpd sean realmente bloqueantes.
+	*/
+	MemResp_mbx mem_done_mbx;
 
 	/** @brief Numero de cores del sistema. */
 	int num_cores;
@@ -68,6 +79,9 @@ class Bus;
 
 	/** @brief Tamano de actualizacion en BusUpd (bytes). */
 	localparam int UPDATE_SIZE = 4;
+
+	/** @brief Profundidad maxima de cola interna por core. */
+	localparam int MAX_QUEUE_PER_CORE = 1;
 
 	/** @brief Abstraccion temporal: ancho de banda efectivo en bytes/ns. */
 	real bus_bandwidth_bytes_per_ns;
@@ -101,6 +115,8 @@ class Bus;
 	int per_core_requests[];
 	/** @brief Conteo por core de concesiones emitidas. */
 	int per_core_grants[];
+	/** @brief Numero de veces que collector debio esperar espacio. */
+	int queue_backpressure_events;
 
 	/** @brief Cantidad de transacciones BusRd concedidas. */
 	int count_BusRd;
@@ -136,19 +152,22 @@ class Bus;
 	 * @brief Constructor del Bus.
 	 * @param bus_mbx Buzon compartido de solicitudes desde caches.
 	 * @param bus_evt_mbx Arreglo de buzones para difusion a caches.
-	 * @param mem_mbx Arreglo de buzones para respuestas de memoria.
+	 * @param mem_req_mbx Buzon para solicitudes de memoria.
 	 * @param num_cores Numero de cores del sistema.
 	 */
 	function new(
 		BusReq_mbx bus_mbx,
 		BusEvt_mbx bus_evt_mbx[],
-		MemResp_mbx mem_mbx[],
+		BusReq_mbx mem_req_mbx,
+		BusReq_mbx mem_done_mbx,
 		int num_cores
 	);
 		int evt_size;
-		int mem_size;
 
+		this.busy = 0;
 		this.bus_mbx = bus_mbx;
+		this.mem_req_mbx = mem_req_mbx;
+		this.mem_done_mbx = mem_done_mbx;
 		this.num_cores = num_cores;
 		this.rr_ptr = 0;
 		this.bus_bandwidth_bytes_per_ns = 4.0;
@@ -168,33 +187,39 @@ class Bus;
 		this.latency_BusRd = 0.0;
 		this.latency_BusRdX = 0.0;
 		this.latency_BusUpd = 0.0;
+		this.queue_backpressure_events = 0;
 
 		if (this.bus_mbx == null) begin
 			$fatal(1, "[Bus] bus_mbx no inicializado");
 		end
+
+		if (this.mem_req_mbx == null) begin
+			$fatal(1, "[Bus] mem_req_mbx no inicializado");
+		end
+
+		if (this.mem_done_mbx == null) begin
+			$fatal(1, "[Bus] mem_done_mbx no inicializado");
+		end
+
 		if (this.num_cores <= 0) begin
 			$fatal(1, "[Bus] num_cores invalido: %0d", this.num_cores);
 		end
 
 		evt_size = bus_evt_mbx.size();
-		mem_size = mem_mbx.size();
-
+		
 		if (evt_size < this.num_cores) begin
 			$fatal(1, "[Bus] bus_evt_mbx size=%0d, num_cores=%0d", evt_size, this.num_cores);
 		end
-		if (mem_size < this.num_cores) begin
-			$fatal(1, "[Bus] mem_mbx size=%0d, num_cores=%0d", mem_size, this.num_cores);
-		end
+		
+
 
 		this.bus_evt_mbx = new[this.num_cores];
-		this.mem_mbx = new[this.num_cores];
 		this.req_queues = new[this.num_cores];
 		this.per_core_requests = new[this.num_cores];
 		this.per_core_grants = new[this.num_cores];
 
 		for (int i = 0; i < this.num_cores; i++) begin
 			this.bus_evt_mbx[i] = bus_evt_mbx[i];
-			this.mem_mbx[i] = mem_mbx[i];
 		end
 
 		for (int i = 0; i < this.num_cores; i++) begin
@@ -319,14 +344,22 @@ class Bus;
 			end
 
 			req.t_enqueue = $realtime; // Referencia para medir tiempo en cola.
+
+			// Si la cola interna del core está llena, el collector debe esperar hasta que escheduler libere espacio.
+			if (req_queues[core_id].size() >= MAX_QUEUE_PER_CORE) begin
+				queue_backpressure_events++;
+				$display("@%0t [BUS][BACKPRESSURE] core_id=%0d, waiting_internal_queue occ=%0d/%0d", $realtime, core_id, req_queues[core_id].size(), MAX_QUEUE_PER_CORE);
+				wait(req_queues[core_id].size() < MAX_QUEUE_PER_CORE);
+				$display("@%0t [BUS][BACKPRESSURE_END] core_id=%0d, occ=%0d/%0d", $realtime, core_id, req_queues[core_id].size(), MAX_QUEUE_PER_CORE);
+			end
 			total_requests++;
 			per_core_requests[core_id]++;
 			req_queues[core_id].push_back(req);
 			// Marca de encolado para metricas
 
 			// Nota: registro de depuracion
-			$display("@%0t [BUS] Recibido req core=%0d type=%0d addr=%h (q=%0d)",
-				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size());
+			$display("@%0t [BUS][ENQ] core=%0d type=%0d addr=%h core_q=%0d shared_occ=%0d",
+				$realtime, core_id, req.req_type, req.address, req_queues[core_id].size(), bus_mbx.num());
 
 			-> queue_event;
 		end
@@ -345,7 +378,11 @@ class Bus;
 	task scheduler_loop();
 		BusRequest req;
 		BusEvent evt;
-		MemResponse mem_resp;
+
+		// mem_done_mbx es el canal por el cual la memoria notifica que la transaccion ha finalizado.
+		// Esto es necesario para que el bus pueda ser realmente bloqueante, esperando a que la memoria termine antes de conceder la siguiente transaccion.
+		MemResponse mem_done;
+
 		int core_id;
 		int bytes;
 		real t_grant;
@@ -355,6 +392,10 @@ class Bus;
 		real queue_wait;
 		real service_time;
 		real total_latency;
+
+
+
+
 		forever begin
 			// Seleccion de core segun politica RR sobre colas por core.
 			core_id = get_next_core_rr();
@@ -366,6 +407,7 @@ class Bus;
 			end
 
 			req = req_queues[core_id].pop_front();
+			busy = 1; // Marca el bus como ocupado durante el procesamiento de esta transaccion.
 			t_grant = $realtime;
 			grant_id++;
 			queue_wait = t_grant - req.t_enqueue; // Tiempo en cola para esta solicitud.
@@ -402,16 +444,37 @@ class Bus;
 
 			#(latency);
 
-			// Respuesta de memoria solo para lecturas.
-			if (req.req_type == BusRd || req.req_type == BusRdX) begin
+			// ============================================================
+			// Acceso a memoria bloqueante
+			// ============================================================
+			// En el modelo Firefly simplificado write-through/update-memory,
+			// el bus no debe liberar la siguiente transacción hasta que memoria
+			// confirme que terminó.
+			//
+			// Esto evita que un BusUpd pase mientras una caché todavía está
+			// esperando completar un BusRd previo para la misma línea.
+			// ============================================================
+			if (req.req_type == BusRd || req.req_type == BusRdX || req.req_type == BusUpd) begin
+
 				total_mem_accesses++;
-				mem_resp = new(req.address, core_id);
-				mem_mbx[core_id].put(mem_resp);
+
+				$display("@%0t [BUS] MEM_REQ core=%0d type=%0d addr=%h",
+					$realtime, core_id, req.req_type, req.address);
+
+				mem_req_mbx.put(req);
+
+				// Espera confirmación real desde memoria.
+				mem_done_mbx.get(mem_done);
+
+				$display("@%0t [BUS] MEM_DONE core=%0d type=%0d addr=%h",
+					$realtime, core_id, req.req_type, req.address);
+
+				// Delta extra para que la caché solicitante tenga oportunidad
+				// de consumir su MemResponse e instalar la línea.
+				#0;
 			end
 
-			// #0 permite a las caches procesar la respuesta en un ciclo delta.
-			#0;
-
+			// Solo aquí la transacción realmente terminó.
 			t_done = $realtime;
 			// service_time incluye difusion, arbitraje y latencia de transferencia.
 			service_time = t_done - t_grant;
@@ -425,12 +488,27 @@ class Bus;
 				BusUpd: latency_BusUpd += total_latency;
 			endcase
 			// Usa t_done local para reportar el tiempo de fin de la transaccion.
-			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h latency=%0f ns bytes=%0d",
-				t_done, core_id, req.req_type, req.address, latency, bytes);
+			$display("@%0t [BUS] DONE core=%0d type=%0d addr=%h service=%0f ns bytes=%0d",
+    			t_done, core_id, req.req_type, req.address, service_time, bytes);
 
+			busy = 0; // Libera el bus para la siguiente transaccion.
+			-> queue_event; // Notifica al collector que se ha procesado una transaccion y puede haber espacio en las colas internas.
 			rr_ptr = (core_id + 1) % num_cores; // Avanza RR para equidad.
 		end
 	endtask
+
+
+	/**
+	 * @brief Indica si el bus esta completamente idle (sin solicitudes pendientes ni transacciones en curso).
+	 * @return 1 si el bus esta idle, 0 si hay actividad.
+	 */
+	function bit is_idle();
+		return (bus_mbx.num() == 0) &&
+			!has_pending_requests() &&
+			(mem_req_mbx.num() == 0) &&
+			(mem_done_mbx.num() == 0) &&
+			!busy;
+	endfunction
 
 
 	/**
@@ -481,6 +559,8 @@ class Bus;
 			$display("[WARN] requests != grants");
 		$display("total_invalidations=%0d total_updates=%0d grant_id=%0d",
 			total_invalidations, total_updates, grant_id);
+		$display("queue_backpressure_events=%0d",
+			queue_backpressure_events);
 		$display("per_core stats:");
 		for (int i = 0; i < num_cores; i++) begin
 			$display("  core%0d req=%0d grant=%0d", i, per_core_requests[i], per_core_grants[i]);

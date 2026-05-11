@@ -31,37 +31,57 @@ module workload_csv_tb;
 
     // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
+    localparam BUS_MBX_DEPTH = 4;
 
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
+    Bus   bus;
+    Memory memory;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
     BusEvt_mbx  bus_evt_mbx   [NUM_CORES];
     MemResp_mbx mem_mbx       [NUM_CORES];
 
-    BusReq_mbx bus_mbx;
+    // Acknowledgments del core para que no envíe solicitudes a la caché más rápido de lo que puede procesarlas
+    CoreAck_mbx cache_to_core [NUM_CORES];
 
-    // Monitoreo y exportación
-    TraceExporter exporter;
-    EventMonitor monitor;
+    BusReq_mbx bus_mbx;
+    BusReq_mbx mem_req_mbx;
+    
+    // Mailbox para que la memoria notifique al bus cuando una transacción de memoria ha finalizado (opcional, dependiendo de la implementación del bus)
+    MemResp_mbx mem_done_mbx;
+
+    // Monitoreo FSM (transiciones de estado)
+    EventMonitor fsm_monitor;
 
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus/memoria.
      */
-    task setup_system();
+    task setup_system(Cache::protocol_e protocol_sel);
 
-        bus_mbx = new();
+        bus_mbx = new(BUS_MBX_DEPTH);
+        mem_req_mbx = new(BUS_MBX_DEPTH);
+        mem_done_mbx = new(BUS_MBX_DEPTH);
+
+        if (fsm_monitor == null) begin
+            fsm_monitor = new();
+            fsm_monitor.enable_transition_export("../sim_results/fsm_transitions.csv");
+        end
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
+        foreach (cache_to_core[i]) cache_to_core[i] = new(1);
+
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::MSI);
+            caches[i] = new(i, protocol_sel, BUS_MBX_DEPTH);
             cores[i]  = new(i);
+
+            caches[i].fsm_monitor = fsm_monitor;
 
             cores[i].to_cache = core_to_cache[i];
 
@@ -69,22 +89,31 @@ module workload_csv_tb;
             caches[i].to_bus    = bus_mbx;
             caches[i].from_bus  = bus_evt_mbx[i];
             caches[i].from_mem  = mem_mbx[i];
+
+            cores[i].from_cache = cache_to_core[i];
+            caches[i].to_core   = cache_to_core[i];
+
         end
 
-        if (monitor == null) begin
-            $fatal(1, "[TopTB] EventMonitor no inicializado");
-        end
+       
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, NUM_CORES);
 
-        // CACHES y BUS/MEMORIA en paralelo
+        // Instancia de Memory: 4 cores, 8 bytes/ns ancho de banda y mailbox para notificar al bus cuando una transacción de memoria ha finalizado.
+        memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
+
+        // CACHES en paralelo
         fork
             caches[0].run();
             caches[1].run();
             caches[2].run();
             caches[3].run();
-
-            // BUS + MEMORIA + EXPORT: monitoriza el bus, reenvía eventos y responde memoria
-            monitor.monitor_bus(bus_mbx, bus_evt_mbx, mem_mbx);
         join_none
+
+        // BUS real: arbitraje RR + broadcast + BW modelado + métricas
+        bus.run();
+
+        // MEMORIA real: procesa solicitudes con latencias modeladas
+        memory.run();
 
         #10;
 
@@ -109,23 +138,32 @@ module workload_csv_tb;
      */
     task load_traces_from_file(string trace_file);
         TraceLoader loader;
-        static string default_trace = "../traces/workload_contention.csv";
+        string pe_trace_file;
+        static string default_trace = "../traces/fake/workload_contention_1000000";
 
         // Si no se proporciona archivo, usa default
         if (trace_file == "") begin
             trace_file = default_trace;
         end
 
-        $display("[TopTB] Cargando traces desde: %s", trace_file);
+        $display("[TopTB] Cargando workload base: %s", trace_file);
 
-        loader = new(trace_file);
-        loader.load_into_cores(cores);
-    endtask
+        foreach (cores[i]) begin
+            pe_trace_file = $sformatf("%s_PE%0d.csv", trace_file, i);
+
+            $display("[TopTB] Cargando PE%0d desde: %s", i, pe_trace_file);
+
+            loader = new(pe_trace_file);
+            loader.load_into_core(cores[i], i);
+        end
+endtask
 
     // TEST
     initial begin
 
         string trace_file;
+        string protocol_name;
+        Cache::protocol_e protocol_sel;
 
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
@@ -140,22 +178,60 @@ module workload_csv_tb;
             trace_file = "";
         end
 
-        exporter = new("../sim_results/trace_output.csv");
-        monitor = new();
-        monitor.exporter = exporter;
+        protocol_name = "";
+        if ($value$plusargs("PROTOCOL=%s", protocol_name)) begin
+            if (protocol_name == "MSI" || protocol_name == "msi") begin
+                $display("[TopTB] Protocolo seleccionado: MSI");
+                protocol_sel = Cache::MSI;
+            end else begin
+                $display("[TopTB] Protocolo seleccionado: FIREFLY");
+                protocol_sel = Cache::FIREFLY;
+            end
+        end else begin
+            $display("[TopTB] +PROTOCOL no especificado");
+            // salir
+            $finish;
+        end
 
         // Ejecuta un único escenario cargando desde archivo
-        setup_system();
+        setup_system(protocol_sel);
 
         load_traces_from_file(trace_file);
 
         $display("\n========== EJECUTANDO TRACES ==========\n");
 
-        run_cores();
-        #100;
+        // No se hace por tiempo, se espera a que cores procesen todo su trace y luego se espera a que bus y memoria terminen de procesar todas las solicitudes.
 
-        monitor.print_stats();
-        exporter.close();
+        run_cores();
+
+        wait (
+            caches[0].get_total_accesses() == cores[0].trace_queue.size() &&
+            caches[1].get_total_accesses() == cores[1].trace_queue.size() &&
+            caches[2].get_total_accesses() == cores[2].trace_queue.size() &&
+            caches[3].get_total_accesses() == cores[3].trace_queue.size()
+        );
+
+        wait (bus.is_idle());
+        wait (memory.is_idle());
+
+        #50;
+
+        $display("\n========== METRICAS CACHES ==========");
+        foreach (caches[i]) begin
+            caches[i].print_metrics();
+        end
+
+        $display("\n========== METRICAS BUS ==========");
+        bus.print_metrics();
+
+        $display("\n========== METRICAS MEMORIA ==========");
+        memory.print_metrics();
+
+        if (fsm_monitor != null) begin
+            fsm_monitor.close();
+        end
+
+        
 
         $display("\n========== FIN SIMULACION ==========");
         $finish;

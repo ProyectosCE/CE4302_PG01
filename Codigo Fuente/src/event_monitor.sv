@@ -1,22 +1,19 @@
 /* EventMonitor.sv
  * ============================================
- * Módulo para monitorear eventos en el bus y generar estadísticas.
- *   - Se utiliza en top_tb antes de run_cores().
+ * Monitor de observabilidad del modelo (no implementa bus/memoria).
  *
- * FORMATO DE ARCHIVO:
- *   CSV con encabezado (ignorado) y líneas de formato:
- *   cycle,core_id,op,address
- *   0,0,R,0x00001000
- *   1,2,W,0x00001000
+ * RESPONSABILIDAD ACTUAL:
+ *   - Exportar transiciones FSM de caché a CSV.
+ *   - Proveer utilidades de cierre de exportadores.
  *
- * VALIDACIONES:
- *   - core_id en rango 0..3
- *   - op en {R, W}
- *   - address válida (hexadecimal 32 bits)
+ * NOTA IMPORTANTE:
+ *   - El flujo de simulación usa únicamente Bus real (class Bus).
  * ============================================
  */
 
 `timescale 1ns/1ps
+
+import types_pkg::*;
 
 class EventMonitor;
 
@@ -28,73 +25,51 @@ class EventMonitor;
     // Exportador opcional (si está configurado, escribe un CSV de eventos)
     TraceExporter exporter;
 
+    // Exportador opcional de transiciones FSM
+    TraceExporter transition_exporter;
+
     // Constructor
     function new();
         bus_rd_count = 0;
         bus_rdx_count = 0;
         bus_upd_count = 0;
         exporter = null;
+        transition_exporter = null;
     endfunction
 
-    /**
-     * @brief Monitorea el bus para contar eventos de tipo BusRd, BusRdX y BusUpd.
-     *        Se debe llamar en paralelo con la ejecución de los cores y caches.
-     * @param bus_mbx Mailbox desde donde se reciben las solicitudes del bus
-     * @param bus_evt_mbx Arreglo de mailboxes para enviar eventos a los caches
-     * @param mem_mbx Arreglo de mailboxes para enviar respuestas de memoria a los cores
-     */
-    task monitor_bus(BusReq_mbx bus_mbx, BusEvt_mbx bus_evt_mbx[], MemResp_mbx mem_mbx[]);
-        // Inicializar estadísticas
-        bus_rd_count = 0;
-        bus_rdx_count = 0;
-        bus_upd_count = 0;
+    function void enable_transition_export(string filename);
+        transition_exporter = new(
+            filename,
+            "time_ns,cache_id,addr_index,old_state,new_state,cause\n"
+        );
+    endfunction
 
-        // Monitorear el bus indefinidamente
-        forever begin
-            BusRequest  bus_req;
-            BusEvent    evt;
-            MemResponse mem_resp;
-            string bus_op;
+    function string state_to_string(state_e state);
+        case (state)
+            Invalid:  return "Invalid";
+            Shared:   return "Shared";
+            Modified: return "Modified";
+            default:  return "Unknown";
+        endcase
+    endfunction
 
-            // Esperar una solicitud en el bus
-            bus_mbx.get(bus_req);
+    task record_transition(longint time_ns, int cache_id, logic [31:0] address, int index, state_e old_state, state_e new_state, string cause);
+        string addr_index;
 
-            // Registrar evento (tiempo, core origen, tipo, address)
-            bus_op = (bus_req.req_type == BusRd)  ? "BusRd" :
-                     (bus_req.req_type == BusRdX) ? "BusRdX" :
-                     (bus_req.req_type == BusUpd) ? "BusUpd" : "Unknown";
-
-            $display("@%0t [EventMonitor] Core=%0d Op=%s Addr=%h",
-                $realtime, bus_req.src_core_id, bus_op,
-                bus_req.address);
-
-            if (exporter != null) begin
-                exporter.log_event($rtoi($realtime), bus_req.src_core_id, bus_op, bus_req.address);
-            end
-
-            // Contar por tipo de transacción
-            case (bus_req.req_type)
-                BusRd:   bus_rd_count++;
-                BusRdX:  bus_rdx_count++;
-                BusUpd:  bus_upd_count++;
-                default: /* no contar */;
-            endcase
-
-            // Reenviar evento a los caches y simular respuesta de memoria
-            evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-            // Enviar evento a todos los caches
-            bus_evt_mbx[0].put(evt);
-            bus_evt_mbx[1].put(evt);
-            bus_evt_mbx[2].put(evt);
-            bus_evt_mbx[3].put(evt);
-            // Simular tiempo de bus y memoria
-            #10.5;
-            mem_resp = new(bus_req.address, bus_req.src_core_id);
-            mem_mbx[bus_req.src_core_id].put(mem_resp);
+        if (transition_exporter == null) begin
+            return;
         end
-    endtask
 
+        addr_index = $sformatf("%h (idx=%0d)", address, index);
+        transition_exporter.log_transition(
+            time_ns,
+            cache_id,
+            addr_index,
+            state_to_string(old_state),
+            state_to_string(new_state),
+            cause
+        );
+    endtask
 
     /**
      * @brief Imprime las estadísticas acumuladas al finalizar la simulación.
@@ -106,5 +81,14 @@ class EventMonitor;
         $display("Total BusUpd : %0d", bus_upd_count);
         $display("==============================\n");
     endtask
+
+    function void close();
+        if (exporter != null) begin
+            exporter.close();
+        end
+        if (transition_exporter != null) begin
+            transition_exporter.close();
+        end
+    endfunction
 
 endclass

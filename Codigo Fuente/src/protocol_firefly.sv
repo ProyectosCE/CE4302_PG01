@@ -35,60 +35,178 @@ class ProtocolFirefly extends ProtocolBase;
         input logic [31:0] tag,
         ref cache_line_t line,
         input BusReq_mbx to_bus,
-        input MemResp_mbx from_mem
+        input MemResp_mbx from_mem,
+
+        ref int read_hits,
+        ref int read_misses,
+
+        ref int write_hits,
+        ref int write_misses,
+
+        ref int bus_stall_count,
+        ref real total_bus_stall_time,
+        ref real max_bus_stall_time,
+        input int BUS_MBX_DEPTH,
+        input EventMonitor transition_monitor
     );
         BusRequest bus_req;
         MemResponse mem_resp;
         bit hit;
+
+
+        /*        * NOTA DE IMPLEMENTACIÓN:
+         *   - La lógica de medición de stalls de bus se ha integrado directamente en el método send_bus_request.
+         *   - Esto permite que cada protocolo (MSI, Firefly) mida de manera consistente el tiempo de espera en el bus sin necesidad de modificar la interfaz del método handle_core_request.
+         *   - La variable max_bus_stall_time se actualiza dentro de send_bus_request si el stall actual supera el máximo registrado.
+         */
+         /* Por qué se añade esta lógica aquí? Para permitir que la lógica de protocolo mida stalls específicos de cada solicitud sin necesidad de modificar la interfaz del método. */
+        real stall_start;
+        real stall_end;
+        real stall_time;
 
         hit = (line.valid && line.tag == tag && line.state != Invalid);
 
         // HIT
         if (hit) begin
             if (req.req_type == PrRd) begin
+                read_hits++;
                 $display("@%0t [Cache %0d] PrRd %h -> HIT (%0d)",
                     $realtime, cache_id, req.address, line.state);
             end
             else begin // PrWr
+                write_hits++;
                 $display("@%0t [Cache %0d] PrWr %h -> HIT (%0d)",
                     $realtime, cache_id, req.address, line.state);
 
                 // Escritura sobre línea compartida: update por BusUpd
-                if (line.state == Shared) begin
+                
                     bus_req = new(BusUpd, req.address, cache_id);
-                    to_bus.put(bus_req);
+                    
+                    
+                    
+                    stall_start = $realtime;
 
+                    send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
+
+                    stall_end = $realtime;
+                    stall_time = stall_end - stall_start;
+
+                    bus_stall_count++;
+                    total_bus_stall_time += stall_time;
+
+                    if (stall_time > max_bus_stall_time)
+                        max_bus_stall_time = stall_time;
+
+
+                        
                     // Permanece en estado Shared (Firefly)
-                end
+                
             end
         end
 
         // MISS
         else begin
             if (req.req_type == PrRd) begin
+                state_e old_state;
+
+                read_misses++;
                 $display("@%0t [Cache %0d] PrRd %h -> MISS -> BusRd",
                     $realtime, cache_id, req.address);
 
+                old_state = line.state;
                 bus_req = new(BusRd, req.address, cache_id);
-                to_bus.put(bus_req);
+                
+                
+                
+                stall_start = $realtime;
+
+                send_bus_request(cache_id, bus_req, to_bus, bus_stall_count, total_bus_stall_time, BUS_MBX_DEPTH);
                 from_mem.get(mem_resp);
+
+                stall_end = $realtime;
+                stall_time = stall_end - stall_start;
+
+                bus_stall_count++;
+                total_bus_stall_time += stall_time;
+
+                if (stall_time > max_bus_stall_time)
+                    max_bus_stall_time = stall_time;
+
+
+
 
                 line.tag   = tag;
                 line.valid = 1;
                 line.state = Shared;
+                if (transition_monitor != null) begin
+                    transition_monitor.record_transition($rtoi($realtime), cache_id, req.address, index, old_state, line.state, "PrRd MISS -> BusRd");
+                end
             end
-            else begin // PrWr
-                $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRdX",
-                    $realtime, cache_id, req.address);
+            else begin // PrWr MISS
+                        state_e old_state;
 
-                bus_req = new(BusRdX, req.address, cache_id);
-                to_bus.put(bus_req);
-                from_mem.get(mem_resp);
+                        write_misses++;
+                        $display("@%0t [Cache %0d] PrWr %h -> MISS -> BusRd + BusUpd",
+                            $realtime, cache_id, req.address);
 
-                line.tag   = tag;
-                line.valid = 1;
-                line.state = Modified;
-            end
+                        old_state = line.state;
+
+                        stall_start = $realtime;
+
+                        // 1. Primero se trae el bloque con BusRd
+                        bus_req = new(BusRd, req.address, cache_id);
+
+                        send_bus_request(
+                            cache_id,
+                            bus_req,
+                            to_bus,
+                            bus_stall_count,
+                            total_bus_stall_time,
+                            BUS_MBX_DEPTH
+                        );
+
+                        from_mem.get(mem_resp);
+
+                        // 2. Luego se emite BusUpd para difundir la escritura
+                        bus_req = new(BusUpd, req.address, cache_id);
+
+                        send_bus_request(
+                            cache_id,
+                            bus_req,
+                            to_bus,
+                            bus_stall_count,
+                            total_bus_stall_time,
+                            BUS_MBX_DEPTH
+                        );
+
+                        stall_end = $realtime;
+                        stall_time = stall_end - stall_start;
+
+                        bus_stall_count+=2; // Contabiliza ambos accesos al bus
+                        total_bus_stall_time += stall_time;
+
+                        if (stall_time > max_bus_stall_time)
+                            max_bus_stall_time = stall_time;
+
+                        line.tag   = tag;
+                        line.valid = 1;
+
+                        // En este modelo Firefly simplificado se deja Shared porque la escritura
+                        // se propaga por BusUpd y la memoria también queda actualizada.
+                        line.state = Shared;
+
+                        if (transition_monitor != null) begin
+                            transition_monitor.record_transition(
+                                $rtoi($realtime),
+                                cache_id,
+                                req.address,
+                                index,
+                                old_state,
+                                line.state,
+                                "PrWr MISS -> BusRd + BusUpd"
+                            );
+                        end
+                    end
         end
     endtask
 
@@ -96,47 +214,98 @@ class ProtocolFirefly extends ProtocolBase;
     /**
      * @brief Lógica Firefly para eventos de snoop.
      */
-    virtual task handle_snoop(
-        input int cache_id,
-        input BusEvent evt,
-        input int index,
-        input logic [31:0] tag,
-        ref cache_line_t line
-    );
-        // Solo procesa si la línea es válida y el tag coincide
-        if (!(line.valid && line.tag == tag)) begin
-            return;
+    /**
+ * @brief Lógica Firefly para eventos de snoop.
+ */
+virtual task handle_snoop(
+    input int cache_id,
+    input BusEvent evt,
+    input int index,
+    input logic [31:0] tag,
+    ref cache_line_t line,
+
+    ref int snoop_busrd,
+    ref int snoop_busrdx,
+    ref int snoop_busupd,
+
+    ref int invalidations_received,
+    ref int updates_received,
+
+    ref int writebacks,
+    input EventMonitor transition_monitor
+);
+    state_e old_state;
+
+    // Si la línea no está válida o el tag no coincide, no hay copia local.
+    if (!(line.valid && line.tag == tag && line.state != Invalid)) begin
+        return;
+    end
+
+    case (evt.req_type)
+
+        BusRd: begin
+            snoop_busrd++;
+
+            old_state  = line.state;
+            line.state = Shared;
+
+            $display("@%0t [Cache %0d] SNOOP BusRd -> permanece Shared",
+                $realtime, cache_id);
+
+            if (transition_monitor != null) begin
+                transition_monitor.record_transition(
+                    $rtoi($realtime),
+                    cache_id,
+                    evt.address,
+                    index,
+                    old_state,
+                    line.state,
+                    "Snoop BusRd -> Shared"
+                );
+            end
         end
 
-        case (evt.req_type)
-            // BusRd
-            BusRd: begin
-                if (line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRd -> Modified->Shared (WB)",
-                        $realtime, cache_id);
-                    line.state = Shared;
-                end
-            end
+        BusUpd: begin
+            snoop_busupd++;
+            updates_received++;
 
-            // BusRdX
-            BusRdX: begin
-                if (line.state == Shared || line.state == Modified) begin
-                    $display("@%0t [Cache %0d] SNOOP BusRdX -> -> Invalid",
-                        $realtime, cache_id);
-                    line.state = Invalid;
-                    line.valid = 0;
-                end
-            end
+            old_state  = line.state;
+            line.state = Shared;
 
-            // BusUpd
-            BusUpd: begin
-                if (line.state == Shared) begin
-                    $display("@%0t [Cache %0d] SNOOP BusUpd -> permanece Shared",
-                        $realtime, cache_id);
-                end
-            end
-        endcase
+            $display("@%0t [Cache %0d] SNOOP BusUpd -> update recibido, permanece Shared",
+                $realtime, cache_id);
 
-    endtask
+            // Si BusEvent tiene campo de dato, aquí debería hacerse:
+            // line.data = evt.data;
+
+            if (transition_monitor != null) begin
+                transition_monitor.record_transition(
+                    $rtoi($realtime),
+                    cache_id,
+                    evt.address,
+                    index,
+                    old_state,
+                    line.state,
+                    "Snoop BusUpd -> Shared"
+                );
+            end
+        end
+
+        BusRdX: begin
+            snoop_busrdx++;
+
+            $display("@%0t [Cache %0d] WARNING: SNOOP BusRdX recibido en Firefly simplificado. No se invalida.",
+                $realtime, cache_id);
+
+            // En Firefly simplificado no se invalida por BusRdX.
+            // invalidations_received no se incrementa aquí.
+        end
+
+        default: begin
+            // No action
+        end
+    endcase
+
+endtask
 
 endclass

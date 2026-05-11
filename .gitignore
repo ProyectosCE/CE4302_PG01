@@ -27,3 +27,8 @@ sc_dpiheader.h
 vsim.dbg
 
 # End of https://www.toptal.com/developers/gitignore/api/modelsim
+
+# Temporal para entrega final
+Demostraciones/Entrega_Final/*.md
+sim_results/
+Codigo Fuente/traces/traces_gen/
