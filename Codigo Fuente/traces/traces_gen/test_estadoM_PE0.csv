@@ -1,0 +1,12 @@
+op,address
+// --- FASE 1: PE1 toma propiedad exclusiva y se mantiene en M ---
+W,0x1000  // Inst 1: I -> M (Genera BusRdX, PE1 es dueño)
+R,0x1000  // Inst 2: M -> M (Hit local)
+W,0x1000  // Inst 3: M -> M (Hit local)
+R,0x1000  // Inst 4: M -> M (Hit local)
+W,0x1000  // Inst 5: M -> M (Hit local)
+R,0x1000  // Inst 6: M -> M (Hit local)
+W,0x1000  // Inst 7: M -> M (Hit local)
+R,0x1000  // Inst 8: M -> M (Hit local)
+W,0x1000  // Inst 9: M -> M (Hit local)
+R,0x1000  // Inst 10: PE1 completa sus 10 instrucciones en estado M

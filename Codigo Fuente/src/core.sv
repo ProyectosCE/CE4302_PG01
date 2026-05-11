@@ -61,6 +61,11 @@ class Core;
      */
     CoreReq_mbx to_cache;
 
+    /**
+     * @brief Mailbox para recibir acknowledgments de la caché
+     */
+    CoreAck_mbx from_cache;
+
 
     /**
      * @brief Cola de solicitudes (trace) que el core enviará a la caché.
@@ -94,8 +99,10 @@ class Core;
      */
     virtual task run();
 
-        if (to_cache == null) begin
-            $fatal(1, "[Core %0d] Mailbox to_cache no inicializado", core_id);
+        CoreAck ack;
+
+        if (to_cache == null || from_cache == null) begin
+            $fatal(1, "[Core %0d] Mailboxes no inicializados", core_id);
         end
 
         $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",
@@ -110,6 +117,7 @@ class Core;
                 req.address);
 
             to_cache.put(req);
+            from_cache.get(ack);
 
             #10; // delay entre instrucciones (simulación)
         end

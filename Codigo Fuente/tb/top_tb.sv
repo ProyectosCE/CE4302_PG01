@@ -31,10 +31,14 @@ module top_tb;
 
     // CONFIGURACIÓN GLOBAL
     localparam NUM_CORES = 4;
+    localparam BUS_MBX_DEPTH = 4;
 
     // COMPONENTES DEL SISTEMA
     Core  cores   [NUM_CORES];
     Cache caches  [NUM_CORES];
+    Bus   bus;
+    Memory memory;
+    EventMonitor fsm_monitor;
 
     // Mailboxes para comunicación entre módulos
     CoreReq_mbx core_to_cache [NUM_CORES];
@@ -42,22 +46,36 @@ module top_tb;
     MemResp_mbx mem_mbx       [NUM_CORES];
 
     BusReq_mbx bus_mbx;
+    BusReq_mbx mem_req_mbx;
+
+    MemResp_mbx mem_done_mbx;
+
 
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
-     *        Lanza en paralelo la ejecución de caches y el bus/memoria.
+     *        Lanza en paralelo la ejecución de caches y el bus real.
      */
     task setup_system();
 
-        bus_mbx = new();
+        bus_mbx = new(BUS_MBX_DEPTH);
+        mem_req_mbx = new(BUS_MBX_DEPTH);
+        mem_done_mbx = new(BUS_MBX_DEPTH);
+
+
+        if (fsm_monitor == null) begin
+            fsm_monitor = new();
+            fsm_monitor.enable_transition_export("../sim_results/fsm_transitions.csv");
+        end
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
         foreach (bus_evt_mbx[i])  bus_evt_mbx[i]  = new();
         foreach (mem_mbx[i])      mem_mbx[i]      = new();
 
         foreach (cores[i]) begin
-            caches[i] = new(i, Cache::MSI);
+            caches[i] = new(i, Cache::FIREFLY, BUS_MBX_DEPTH); // Escoger entre: MSI o FIREFLY
             cores[i]  = new(i);
+
+            caches[i].fsm_monitor = fsm_monitor;
 
             cores[i].to_cache = core_to_cache[i];
 
@@ -67,37 +85,21 @@ module top_tb;
             caches[i].from_mem  = mem_mbx[i];
         end
 
-        // CACHES y BUS/MEMORIA en paralelo
+        // BUS REAL: arbitraje, broadcast y respuesta de memoria modelada.
+        bus = new(bus_mbx, bus_evt_mbx, mem_req_mbx, mem_done_mbx, NUM_CORES);
+        memory = new(mem_req_mbx, mem_mbx, mem_done_mbx, NUM_CORES, 8.0);
+
+        // CACHES en paralelo
         fork
             caches[0].run();
             caches[1].run();
             caches[2].run();
             caches[3].run();
-
-            // BUS + MEMORIA: simula el bus compartido y la memoria principal
-            forever begin
-                BusRequest  bus_req;
-                BusEvent    evt;
-                MemResponse mem_resp;
-
-                bus_mbx.get(bus_req);
-
-                $display("@%0t [BUS] type=%0d addr=%h core=%0d",
-                    $realtime, bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                evt = new(bus_req.req_type, bus_req.address, bus_req.src_core_id);
-
-                bus_evt_mbx[0].put(evt);
-                bus_evt_mbx[1].put(evt);
-                bus_evt_mbx[2].put(evt);
-                bus_evt_mbx[3].put(evt);
-
-                #10.5;
-
-                mem_resp = new(bus_req.address, bus_req.src_core_id);
-                mem_mbx[bus_req.src_core_id].put(mem_resp);
-            end
         join_none
+
+        // BUS REAL en ejecución concurrente.
+        bus.run();
+        memory.run();
 
         #10;
 
@@ -113,6 +115,25 @@ module top_tb;
             cores[2].run();
             cores[3].run();
         join
+    endtask
+
+    /**
+    * @brief Imprime métricas de todas las cachés.
+    */
+    task print_all_cache_metrics(string scenario_name);
+
+        $display("");
+        $display("======================================================");
+        $display("METRICS REPORT: %s", scenario_name);
+        $display("======================================================");
+
+        foreach (caches[i]) begin
+            caches[i].print_metrics();
+        end
+
+        $display("======================================================");
+        $display("");
+
     endtask
 
     // TEST
@@ -141,6 +162,8 @@ module top_tb;
         run_cores();
         #100;
 
+        print_all_cache_metrics("ESCENARIO 1 - ALTA CONTENCION");
+
         // PRODUCTOR - CONSUMIDOR
         setup_system();
 
@@ -161,6 +184,8 @@ module top_tb;
         run_cores();
         #100;
 
+        print_all_cache_metrics("ESCENARIO 2 - PRODUCTOR-CONSUMIDOR");
+
         // MIGRACION DE OWNERSHIP
         setup_system();
 
@@ -178,7 +203,12 @@ module top_tb;
         run_cores();
         #100;
 
+        print_all_cache_metrics("ESCENARIO 3 - MIGRACION DE OWNERSHIP");
+
         $display("\n========== FIN DEMO ==========");
+        if (fsm_monitor != null) begin
+            fsm_monitor.close();
+        end
         $finish;
 
     end

@@ -3,7 +3,8 @@
  * ARCHIVO: trace_loader.sv
  * DESCRIPCIÓN GENERAL:
  *   Cargador de trazas (memory traces) desde archivo CSV.
- *   Parsea el formato: cycle,core_id,op,address
+ *   Parsea formato principal: core_id,op,address
+ *   y formato legacy: cycle,core_id,op,address
  *   Inyecta solicitudes en la cola de cada core para reproducción.
  *
  * ROL EN EL SISTEMA:
@@ -16,9 +17,12 @@
  *
  * FORMATO DE ARCHIVO:
  *   CSV con encabezado (ignorado) y líneas de formato:
+ *   core_id,op,address
+ *   0,R,0x00001000
+ *   1,W,0x00001000
+ *
+ *   También acepta (legacy):
  *   cycle,core_id,op,address
- *   0,0,R,0x00001000
- *   1,2,W,0x00001000
  *
  * VALIDACIONES:
  *   - core_id en rango 0..3
@@ -50,14 +54,12 @@ class TraceLoader;
 
     /**
      * @brief Carga las solicitudes del archivo CSV en los cores correspondientes.
-     *        Formato esperado: cycle,core_id,op,address
+     *        Formato esperado: core_id,op,address
      * @param cores Arreglo de cores a los que se asignarán las solicitudes
      */
-    task load_into_cores(Core cores[]);
+    task load_into_core(Core core, int core_id);
         int file, r, line_num;
         string line;
-        int cycle;
-        int core_id;
         byte unsigned op_char;
         string op_str;
         string address_str;
@@ -96,18 +98,10 @@ class TraceLoader;
             if (line.len() && (line[line.len()-1] == 13))
                 line = line.substr(0, line.len()-1);
 
-            // Parsea línea CSV: cycle,core_id,op,address
-            // Nota: usar %c para 'op' evita que %s consuma la coma.
-            r = $sscanf(line, "%d,%d,%c,%s", cycle, core_id, op_char, address_str);
-            if (r != 4) begin
-                $warning("[TraceLoader] Línea %0d: formato inválido (esperado 4 campos): %s", line_num, line);
-                skipped++;
-                continue;
-            end
-
-            // Valida core_id
-            if (core_id < 0 || core_id >= cores.size()) begin
-                $warning("[TraceLoader] Línea %0d: core_id fuera de rango: %0d", line_num, core_id);
+            // Formato nuevo: op,address
+            r = $sscanf(line, "%c,%s", op_char, address_str);
+            if (r != 2) begin
+                $warning("[TraceLoader] Línea %0d: formato inválido (esperado op,address): %s", line_num, line);
                 skipped++;
                 continue;
             end
@@ -141,7 +135,7 @@ class TraceLoader;
                 req = new(PrWr, address, core_id);
             end
 
-            cores[core_id].add_request(req);
+            core.add_request(req);
             total_reqs++;
         end
 

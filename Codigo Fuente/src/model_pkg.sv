@@ -51,6 +51,8 @@ package model_pkg;
      *   - memory.sv: Memoria principal
      *   - environment.sv: Entorno de simulación
      */
+    `include "trace_export.sv"
+    `include "event_monitor.sv"
     `include "core.sv"
     `include "protocol_base.sv"
     `include "protocol_msi.sv"
@@ -60,7 +62,5 @@ package model_pkg;
     `include "memory.sv"
     `include "environment.sv"
     `include "trace_loader.sv"
-    `include "trace_export.sv"
-    `include "event_monitor.sv"
 
 endpackage

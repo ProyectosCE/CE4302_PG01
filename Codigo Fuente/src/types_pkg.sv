@@ -50,6 +50,20 @@ package types_pkg;
         BusUpd   ///< Actualización (Firefly)
     } bus_req_type_e;
 
+    /**
+     * @brief Estado de coherencia de una línea de caché.
+     */
+    typedef enum {Invalid, Shared, Modified} state_e;
+
+    /**
+     * @brief Estructura de línea de caché compartida entre Cache y protocolos.
+     */
+    typedef struct {
+        logic [31:0] tag;
+        state_e state;
+        bit valid;
+    } cache_line_t;
+
 
     /**
      * ============================================
@@ -115,6 +129,10 @@ package types_pkg;
          * @brief Identificador del core origen
          */
         int src_core_id;
+        /**
+         * @brief Timestamp de encolado (metricas)
+         */
+        real t_enqueue;
 
         /**
          * @brief Constructor de BusRequest
@@ -215,6 +233,16 @@ package types_pkg;
             $display("[MemResponse] addr=%h dest=%0d", address, dest_core_id);
         endfunction
     endclass
+
+    class CoreAck;
+        int core_id;
+
+        function new(int core_id);
+            this.core_id = core_id;
+        endfunction
+    endclass
+
+    typedef mailbox #(CoreAck) CoreAck_mbx;
 
 
     // MAILBOXES
