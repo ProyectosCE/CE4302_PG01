@@ -1,0 +1,35 @@
+class TraceExporter;
+
+    // Archivo de salida
+    int file;
+
+    // Constructor
+    function new(string filename, string header = "time_ns,core_id,bus_op,address\n");
+        file = $fopen(filename, "w");
+        if (file == 0) begin
+            $fatal(1, "[TraceExporter] No se puede crear archivo: %s", filename);
+        end
+        // Escribir encabezado
+        $fwrite(file, "%s", header);
+    endfunction
+
+    /**
+     * @brief Registra un evento en el archivo de trace.
+     * @param time_ns Tiempo del evento (ns)
+     * @param core_id ID del core que originó la transacción
+     * @param bus_op Tipo de operación en el bus (BusRd, BusRdX, BusUpd)
+     * @param address Dirección involucrada en la transacción
+     */
+    task log_event(longint time_ns, int core_id, string bus_op, logic [31:0] address);
+        $fwrite(file, "%0d,%0d,%s,%h\n", time_ns, core_id, bus_op, address);
+    endtask
+
+    task log_transition(longint time_ns, int cache_id, string addr_index, string old_state, string new_state, string cause);
+        $fwrite(file, "%0d,%0d,%s,%s,%s,%s\n", time_ns, cache_id, addr_index, old_state, new_state, cause);
+    endtask
+
+    // Destructor para cerrar el archivo al finalizar la simulación
+    function void close();
+        $fclose(file);
+    endfunction
+endclass

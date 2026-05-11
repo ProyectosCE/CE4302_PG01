@@ -1,0 +1,129 @@
+
+/*
+ * ============================================
+ * ARCHIVO: core.sv
+ * DESCRIPCIÓN GENERAL:
+ *   Implementa la clase Core, que modela un procesador simple dentro de un sistema multicore.
+ *   Genera solicitudes de acceso a memoria (lectura/escritura) y las envía a su caché privada.
+ *   No ejecuta instrucciones reales, solo simula el flujo de peticiones.
+ *
+ * ROL EN EL SISTEMA:
+ *   - Origen de solicitudes de memoria.
+ *   - Interactúa únicamente con su caché L1 privada.
+ *
+ * RELACIÓN CON OTROS MÓDULOS:
+ *   - Envía solicitudes a la caché (Cache).
+ *   - No interactúa directamente con Bus ni Memoria.
+ *
+ * PROTOCOLOS INVOLUCRADOS:
+ *   - Compatible con MSI y Firefly a través de la caché.
+ *
+ * MANEJO DE TIEMPO EN LOGS:
+ *   - Para trazas se utiliza $realtime en lugar de $time, permitiendo reflejar
+ *     tiempos fraccionales cuando la simulación tiene precisión menor al timeunit.
+ *   - Referencia para uso de $realtime: https://verificationacademy.com/forums/t/time-vs-realtime/38218
+ * ============================================
+ */
+import types_pkg::*;
+
+
+/*
+ * ============================================
+ * CLASE: Core
+ * DESCRIPCIÓN:
+ *   Modela un procesador simple que genera una secuencia de solicitudes de acceso a memoria.
+ *   No ejecuta instrucciones reales, solo simula el envío de peticiones a la caché.
+ *
+ * RESPONSABILIDAD:
+ *   - Generar y enviar solicitudes de lectura/escritura.
+ *   - Simular el comportamiento de un core en un sistema multicore.
+ *
+ * INTERFACES DE COMUNICACIÓN:
+ *   - to_cache: mailbox para enviar solicitudes a la caché.
+ *
+ * INTERACCIÓN:
+ *   - Interactúa únicamente con la caché mediante mailbox.
+ *   - La tarea run se mantiene virtual para permitir polimorfismo y
+ *     extensiones futuras mediante herencia (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
+ * ============================================
+ */
+class Core;
+
+
+    /**
+     * @brief Identificador único del core.
+     */
+    int core_id;
+
+
+    /**
+     * @brief Mailbox para enviar solicitudes a la caché asociada.
+     */
+    CoreReq_mbx to_cache;
+
+    /**
+     * @brief Mailbox para recibir acknowledgments de la caché
+     */
+    CoreAck_mbx from_cache;
+
+
+    /**
+     * @brief Cola de solicitudes (trace) que el core enviará a la caché.
+     */
+    CoreRequest trace_queue[$];
+
+
+    /**
+     * @brief Constructor de la clase Core.
+     * @param core_id Identificador del core
+     */
+    function new(int core_id);
+        this.core_id = core_id;
+    endfunction
+
+
+    /**
+     * @brief Agrega una solicitud a la cola de peticiones del core.
+     * @param req Solicitud a agregar
+     */
+    function void add_request(CoreRequest req);
+        trace_queue.push_back(req);
+    endfunction
+
+
+    /**
+     * @brief Tarea principal del core. Envía secuencialmente las solicitudes de la cola
+     *        a la caché asociada, simulando el comportamiento de un procesador.
+     *        Incluye mensajes de debug para seguimiento.
+     *        Se declara virtual para que subclases puedan especializar su ejecución (referencia: https://www.edn.com/inheritance-and-polymorphism-of-systemverilog-oop-for-uvm-verification/).
+     */
+    virtual task run();
+
+        CoreAck ack;
+
+        if (to_cache == null || from_cache == null) begin
+            $fatal(1, "[Core %0d] Mailboxes no inicializados", core_id);
+        end
+
+        $display("@%0t [Core %0d] Iniciando ejecucion (%0d requests)",
+            $realtime, core_id, trace_queue.size());
+
+        foreach (trace_queue[i]) begin
+            CoreRequest req = trace_queue[i];
+
+            $display("@%0t [Core %0d] Enviando %s addr=%h",
+                $realtime, core_id,
+                (req.req_type == PrRd) ? "PrRd" : "PrWr",
+                req.address);
+
+            to_cache.put(req);
+            from_cache.get(ack);
+
+            #10; // delay entre instrucciones (simulación)
+        end
+
+        $display("@%0t [Core %0d] Finalizo ejecucion", $realtime, core_id);
+
+    endtask
+
+endclass
