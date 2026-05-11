@@ -1,0 +1,11 @@
+op,address
+R,0x3000  // PE0: Inst 1-9 (Direcciones privadas)
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x3000
+R,0x1000  // PE0 Inst 10: I -> S (PE1 cambia M -> S y hace Write-back)

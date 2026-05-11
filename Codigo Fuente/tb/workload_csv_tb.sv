@@ -56,6 +56,14 @@ module workload_csv_tb;
     // Monitoreo FSM (transiciones de estado)
     EventMonitor fsm_monitor;
 
+
+        // Metadata de ejecución/exportación
+        string g_results_dir;
+        string g_run_id;
+        string g_run_timestamp;
+        string g_protocol_name;
+        string g_workload_name;
+
     /**
      * @brief Inicializa el sistema: crea instancias, mailboxes y conecta todos los módulos.
      *        Lanza en paralelo la ejecución de caches y el bus/memoria.
@@ -67,8 +75,19 @@ module workload_csv_tb;
         mem_done_mbx = new(BUS_MBX_DEPTH);
 
         if (fsm_monitor == null) begin
+            string fsm_csv_path;
+
             fsm_monitor = new();
-            fsm_monitor.enable_transition_export("../sim_results/fsm_transitions.csv");
+
+            fsm_csv_path = $sformatf(
+                "%s/csv_state_transitions/%s_%s_%s_state_transitions.csv",
+                g_results_dir,
+                g_run_id,
+                g_protocol_name,
+                g_workload_name
+            );
+
+            fsm_monitor.enable_transition_export(fsm_csv_path);
         end
 
         foreach (core_to_cache[i]) core_to_cache[i] = new();
@@ -158,6 +177,277 @@ module workload_csv_tb;
         end
 endtask
 
+
+
+    task export_cache_metrics_csv();
+        int fh;
+        string path;
+
+        path = $sformatf(
+            "%s/csv_per_cache/%s_%s_%s_cache_metrics.csv",
+            g_results_dir,
+            g_run_id,
+            g_protocol_name,
+            g_workload_name
+        );
+
+        fh = $fopen(path, "w");
+
+        if (fh == 0) begin
+            $display("[ERROR] No se pudo abrir CSV de cache metrics: %s", path);
+            return;
+        end
+
+        $fdisplay(fh,
+            "run_id,timestamp,protocol,workload,core_id,read_hits,read_misses,write_hits,write_misses,total_accesses,global_hit_rate,global_miss_rate,read_hit_rate,write_hit_rate,snoop_busrd,snoop_busrdx,snoop_busupd,invalidations_received,updates_received,writebacks,bus_stalls,total_stall_time_ns,avg_stall_time_ns,max_stall_time_ns"
+        );
+
+        foreach (caches[i]) begin
+            int total_reads;
+            int total_writes;
+            real read_hit_rate;
+            real write_hit_rate;
+            real avg_stall_time;
+
+            total_reads  = caches[i].get_total_reads();
+            total_writes = caches[i].get_total_writes();
+
+            read_hit_rate =
+                (total_reads == 0) ? 0.0 :
+                (real'(caches[i].read_hits) / real'(total_reads)) * 100.0;
+
+            write_hit_rate =
+                (total_writes == 0) ? 0.0 :
+                (real'(caches[i].write_hits) / real'(total_writes)) * 100.0;
+
+            avg_stall_time =
+                (caches[i].total_bus_stalls == 0) ? 0.0 :
+                caches[i].total_bus_stall_time / real'(caches[i].total_bus_stalls);
+
+            $fdisplay(fh,
+                "%s,%s,%s,%s,%0d,%0d,%0d,%0d,%0d,%0d,%0.2f,%0.2f,%0.2f,%0.2f,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0.2f,%0.2f,%0.2f",
+                g_run_id,
+                g_run_timestamp,
+                g_protocol_name,
+                g_workload_name,
+                i,
+                caches[i].read_hits,
+                caches[i].read_misses,
+                caches[i].write_hits,
+                caches[i].write_misses,
+                caches[i].get_total_accesses(),
+                caches[i].get_hit_rate(),
+                caches[i].get_miss_rate(),
+                read_hit_rate,
+                write_hit_rate,
+                caches[i].snoop_busrd,
+                caches[i].snoop_busrdx,
+                caches[i].snoop_busupd,
+                caches[i].invalidations_received,
+                caches[i].updates_received,
+                caches[i].writebacks,
+                caches[i].total_bus_stalls,
+                caches[i].total_bus_stall_time,
+                avg_stall_time,
+                caches[i].max_bus_stall_time
+            );
+        end
+
+        $fclose(fh);
+
+        $display("[CSV] Cache metrics exportado: %s", path);
+    endtask
+
+
+    task export_summary_csv();
+        int fh;
+        string path;
+
+        int total_accesses;
+        int total_hits;
+        int total_misses;
+        real global_hit_rate;
+        real global_miss_rate;
+
+        total_accesses = 0;
+        total_hits     = 0;
+        total_misses   = 0;
+
+        foreach (caches[i]) begin
+            total_accesses += caches[i].get_total_accesses();
+            total_hits     += caches[i].read_hits + caches[i].write_hits;
+            total_misses   += caches[i].read_misses + caches[i].write_misses;
+        end
+
+        global_hit_rate =
+            (total_accesses == 0) ? 0.0 :
+            (real'(total_hits) / real'(total_accesses)) * 100.0;
+
+        global_miss_rate =
+            (total_accesses == 0) ? 0.0 :
+            (real'(total_misses) / real'(total_accesses)) * 100.0;
+
+        path = $sformatf(
+            "%s/csv_summary/%s_%s_%s_summary.csv",
+            g_results_dir,
+            g_run_id,
+            g_protocol_name,
+            g_workload_name
+        );
+
+        fh = $fopen(path, "w");
+
+        if (fh == 0) begin
+            $display("[ERROR] No se pudo abrir CSV summary: %s", path);
+            return;
+        end
+
+        $fdisplay(fh,
+            "run_id,timestamp,protocol,workload,num_cores,total_accesses,total_hits,total_misses,global_hit_rate,global_miss_rate,total_bus_requests,total_bus_grants,total_mem_accesses,total_bus_bytes,busrd,busrdx,busupd,total_invalidations,total_updates,total_memory_accesses,total_memory_bytes"
+        );
+
+        $fdisplay(fh,
+            "%s,%s,%s,%s,%0d,%0d,%0d,%0d,%0.2f,%0.2f,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d",
+            g_run_id,
+            g_run_timestamp,
+            g_protocol_name,
+            g_workload_name,
+            NUM_CORES,
+            total_accesses,
+            total_hits,
+            total_misses,
+            global_hit_rate,
+            global_miss_rate,
+            bus.total_requests,
+            bus.total_grants,
+            bus.total_mem_accesses,
+            bus.total_bytes_transferred,
+            bus.count_BusRd,
+            bus.count_BusRdX,
+            bus.count_BusUpd,
+            bus.total_invalidations,
+            bus.total_updates,
+            memory.total_accesses,
+            memory.total_bytes_transferred
+        );
+
+        $fclose(fh);
+
+        $display("[CSV] Summary exportado: %s", path);
+    endtask
+
+
+    task export_bus_metrics_csv();
+        int fh;
+        string path;
+
+        real total_time;
+        real bandwidth;
+
+        total_time = $realtime - bus.sim_start_time;
+        bandwidth = (total_time > 0.0) ?
+            (bus.total_bytes_transferred / total_time) : 0.0;
+
+        path = $sformatf(
+            "%s/csv_bus_events/%s_%s_%s_bus_summary.csv",
+            g_results_dir,
+            g_run_id,
+            g_protocol_name,
+            g_workload_name
+        );
+
+        fh = $fopen(path, "w");
+
+        if (fh == 0) begin
+            $display("[ERROR] No se pudo abrir CSV bus summary: %s", path);
+            return;
+        end
+
+        $fdisplay(fh,
+            "run_id,timestamp,protocol,workload,total_requests,total_grants,total_mem_accesses,total_bytes,total_invalidations,total_updates,queue_backpressure_events,busrd,busrdx,busupd,total_time_ns,bandwidth_bytes_per_ns"
+        );
+
+        $fdisplay(fh,
+            "%s,%s,%s,%s,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0.3f,%0.6f",
+            g_run_id,
+            g_run_timestamp,
+            g_protocol_name,
+            g_workload_name,
+            bus.total_requests,
+            bus.total_grants,
+            bus.total_mem_accesses,
+            bus.total_bytes_transferred,
+            bus.total_invalidations,
+            bus.total_updates,
+            bus.queue_backpressure_events,
+            bus.count_BusRd,
+            bus.count_BusRdX,
+            bus.count_BusUpd,
+            total_time,
+            bandwidth
+        );
+
+        $fclose(fh);
+
+        $display("[CSV] Bus summary exportado: %s", path);
+    endtask
+
+
+    task export_memory_metrics_csv();
+        int fh;
+        string path;
+
+        real total_time;
+        real bandwidth;
+
+        total_time = $realtime - memory.sim_start_time;
+        bandwidth = (total_time > 0.0) ?
+            (memory.total_bytes_transferred / total_time) : 0.0;
+
+        path = $sformatf(
+            "%s/csv_memory/%s_%s_%s_memory_metrics.csv",
+            g_results_dir,
+            g_run_id,
+            g_protocol_name,
+            g_workload_name
+        );
+
+        fh = $fopen(path, "w");
+
+        if (fh == 0) begin
+            $display("[ERROR] No se pudo abrir CSV memory metrics: %s", path);
+            return;
+        end
+
+        $fdisplay(fh,
+            "run_id,timestamp,protocol,workload,total_accesses,busrd,busrdx,busupd,total_bytes,sim_time_ns,bandwidth_bytes_per_ns,max_queue_length,avg_queue_wait_ns,avg_service_time_ns,avg_total_latency_ns,total_service_time_ns"
+        );
+
+        $fdisplay(fh,
+            "%s,%s,%s,%s,%0d,%0d,%0d,%0d,%0d,%0.3f,%0.6f,%0d,%0.3f,%0.3f,%0.3f,%0.3f",
+            g_run_id,
+            g_run_timestamp,
+            g_protocol_name,
+            g_workload_name,
+            memory.total_accesses,
+            memory.total_reads,
+            memory.total_rdx,
+            memory.total_updates,
+            memory.total_bytes_transferred,
+            total_time,
+            bandwidth,
+            memory.max_queue_length,
+            memory.get_avg_queue_wait(),
+            memory.get_avg_service_time(),
+            memory.get_avg_total_latency(),
+            memory.total_service_time
+        );
+
+        $fclose(fh);
+
+        $display("[CSV] Memory metrics exportado: %s", path);
+endtask
+
     // TEST
     initial begin
 
@@ -165,8 +455,38 @@ endtask
         string protocol_name;
         Cache::protocol_e protocol_sel;
 
+
+        string workload_plusarg;
+        string run_id_plusarg;
+        string run_timestamp_plusarg;
+        string results_dir_plusarg;
+
         // Formato temporal global del testbench de integración (ns con 1 decimal).
         $timeformat(-9, 3, " ns", 10);
+
+
+
+        if (!$value$plusargs("RUN_ID=%s", run_id_plusarg)) begin
+            run_id_plusarg = "run_no_id";
+        end
+
+        if (!$value$plusargs("RUN_TIMESTAMP=%s", run_timestamp_plusarg)) begin
+            run_timestamp_plusarg = "unknown_timestamp";
+        end
+
+        if (!$value$plusargs("WORKLOAD=%s", workload_plusarg)) begin
+            workload_plusarg = "unknown_workload";
+        end
+
+        if (!$value$plusargs("RESULTS_DIR=%s", results_dir_plusarg)) begin
+            results_dir_plusarg = "../sim_results";
+        end
+
+        g_run_id        = run_id_plusarg;
+        g_run_timestamp = run_timestamp_plusarg;
+        g_workload_name = workload_plusarg;
+        g_results_dir   = results_dir_plusarg;
+
 
         $display("========================================");
         $display("   DEMO 2 - SISTEMA MULTICORE COMPLETO");
@@ -183,9 +503,11 @@ endtask
             if (protocol_name == "MSI" || protocol_name == "msi") begin
                 $display("[TopTB] Protocolo seleccionado: MSI");
                 protocol_sel = Cache::MSI;
+                g_protocol_name = "MSI";
             end else begin
                 $display("[TopTB] Protocolo seleccionado: FIREFLY");
                 protocol_sel = Cache::FIREFLY;
+                g_protocol_name = "FIREFLY";
             end
         end else begin
             $display("[TopTB] +PROTOCOL no especificado");
@@ -197,6 +519,11 @@ endtask
         setup_system(protocol_sel);
 
         load_traces_from_file(trace_file);
+
+        $display("[TopTB] RUN_ID       : %s", g_run_id);
+        $display("[TopTB] TIMESTAMP    : %s", g_run_timestamp);
+        $display("[TopTB] WORKLOAD     : %s", g_workload_name);
+        $display("[TopTB] RESULTS_DIR  : %s", g_results_dir);
 
         $display("\n========== EJECUTANDO TRACES ==========\n");
 
@@ -231,7 +558,15 @@ endtask
             fsm_monitor.close();
         end
 
-        
+
+        $display("\n========== EXPORTANDO CSV ==========");
+
+        export_cache_metrics_csv();
+        export_summary_csv();
+        export_bus_metrics_csv();
+        export_memory_metrics_csv();
+
+        $display("[TopTB] PROTOCOL     : %s", g_protocol_name);
 
         $display("\n========== FIN SIMULACION ==========");
         $finish;

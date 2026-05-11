@@ -9,11 +9,32 @@ $simDir = Join-Path $root '..\scripts'
 $resultsDir = Join-Path $root '..\sim_results'
 $runDoPath = Join-Path $root 'run_tb.do'
 
+# Run metadata
+$runId = Get-Date -Format 'yyyyMMdd_HHmmss'
+$runTimestamp = Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'
 
-if (-not (Test-Path $resultsDir)) {
-    New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
-    Write-Host "Carpeta sim_results creada." -ForegroundColor Green
+# Carpetas de resultados
+$resultsSubdirs = @(
+    $resultsDir,
+    (Join-Path $resultsDir 'logs'),
+    (Join-Path $resultsDir 'csv_summary'),
+    (Join-Path $resultsDir 'csv_per_cache'),
+    (Join-Path $resultsDir 'csv_bus_events'),
+    (Join-Path $resultsDir 'csv_state_transitions'),
+    (Join-Path $resultsDir 'csv_timeline'),
+    (Join-Path $resultsDir 'csv_memory')
+)
+
+
+
+foreach ($dir in $resultsSubdirs) {
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
 }
+
+Write-Host "Carpetas de sim_results listas." -ForegroundColor Green
+Write-Host "RUN_ID: $runId" -ForegroundColor Cyan
 
 # List all .sv files in tb/ and extract module names
 $tbFiles = Get-ChildItem -Path $tbDir -Filter '*.sv' | Select-Object -ExpandProperty Name
@@ -112,26 +133,55 @@ if ($tbName -eq 'workload_csv_tb') {
     $workloadBase = $workloadGroups[$selectedCsvInt]
     $traceRel = "../traces/traces_gen/$workloadBase"
 
+    $logRel = "../sim_results/logs/${runId}_${protocolName}_${workloadBase}.log"
+
     $doLines = @(
         'vlib work',
         'vlog "../src/types_pkg.sv"',
         'vlog "../src/model_pkg.sv"',
         'vlog "../tb/*.sv"',
-        ('vsim ' + $tbName + ' +TRACE_FILE=' + $traceRel + ' +PROTOCOL=' + $protocolName),
+        (
+            'vsim ' + $tbName +
+            ' +TRACE_FILE=' + $traceRel +
+            ' +PROTOCOL=' + $protocolName +
+            ' +WORKLOAD=' + $workloadBase +
+            ' +RUN_ID=' + $runId +
+            ' +RUN_TIMESTAMP=' + $runTimestamp +
+            ' +RESULTS_DIR=../sim_results'
+        ),
+        ('transcript file "' + $logRel + '"'),
+        'transcript on',
         'run -all',
+        'transcript off',
         'quit'
     )
 } else {
+    $workloadBase = "manual"
+
+    $logRel = "../sim_results/logs/${runId}_${protocolName}_${workloadBase}.log"
+
     $doLines = @(
         'vlib work',
         'vlog "../src/types_pkg.sv"',
         'vlog "../src/model_pkg.sv"',
         'vlog "../tb/*.sv"',
-        ('vsim ' + $tbName + ' +PROTOCOL=' + $protocolName),
+        (
+            'vsim ' + $tbName +
+            ' +PROTOCOL=' + $protocolName +
+            ' +WORKLOAD=' + $workloadBase +
+            ' +RUN_ID=' + $runId +
+            ' +RUN_TIMESTAMP=' + $runTimestamp +
+            ' +RESULTS_DIR=../sim_results'
+        ),
+        ('transcript file "' + $logRel + '"'),
+        'transcript on',
         'run -all',
+        'transcript off',
         'quit'
     )
 }
+
+
 $doLines | Set-Content -Encoding ASCII $runDoPath
 
 Write-Host "Archivo temporal run_tb.do generado para $tbName." -ForegroundColor Green
